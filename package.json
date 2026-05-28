@@ -1,0 +1,20 @@
+{
+  "name": "poke-arena",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:migrate": "npm run migrate -w server",
+    "db:studio": "npm run studio -w server",
+    "build": "npm run build -w packages/shared && npm run build -w server && npm run build -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

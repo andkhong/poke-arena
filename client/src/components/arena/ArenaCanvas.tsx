@@ -1,0 +1,122 @@
+import { useEffect, useRef, useState } from "react";
+import * as PIXI from "pixi.js";
+import { ArenaRenderer } from "../../game/ArenaRenderer";
+import { useArenaStore } from "../../store/arenaStore";
+
+export function ArenaCanvas() {
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const rendererRef = useRef<ArenaRenderer | null>(null);
+  const lastTickRef = useRef(-1);
+  const initDoneRef = useRef(false); // true once app.init() resolves successfully
+
+  const [debugInfo, setDebugInfo] = useState("pixi: initializing...");
+
+  const { players, tick, arenaW, arenaH, pendingActions, clearPendingActions } = useArenaStore();
+  const storeSnapshot = useRef({ players, arenaW, arenaH });
+  storeSnapshot.current = { players, arenaW, arenaH };
+
+  // Init Pixi exactly once — safe for React Strict Mode double-invoke
+  useEffect(() => {
+    const container = canvasRef.current;
+    if (!container) return;
+
+    // Guard: if we already initialized (Strict Mode second run sees this), skip
+    if (initDoneRef.current) return;
+
+    const app = new PIXI.Application();
+    let mounted = true;
+
+    const w = container.clientWidth || 800;
+    const h = container.clientHeight || 600;
+
+    console.log("[ArenaCanvas] starting Pixi init w=", w, "h=", h);
+    setDebugInfo(`pixi: init (${w}×${h})`);
+
+    app
+      .init({ width: w, height: h, backgroundColor: 0x1a2e1a, antialias: false })
+      .then(() => {
+        if (!mounted) {
+          try { app.destroy(true); } catch { /* ignore */ }
+          return;
+        }
+
+        initDoneRef.current = true;
+        const canvas = app.canvas as HTMLCanvasElement;
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
+        canvas.style.display = "block";
+        container.appendChild(canvas);
+
+        const r = new ArenaRenderer(app);
+        rendererRef.current = r;
+
+        const { players: p, arenaW: aw, arenaH: ah } = storeSnapshot.current;
+        console.log("[ArenaCanvas] Pixi ready. players in snapshot:", p.length, "arenaW:", aw, "arenaH:", ah);
+        setDebugInfo(`pixi: ready | sprites: 0 | players: ${p.length}`);
+
+        if (p.length > 0) {
+          r.initPlayers(p, aw, ah);
+          setDebugInfo(`pixi: ready | sprites: ${p.length} | tick: 0`);
+        }
+      })
+      .catch((err) => {
+        console.error("[ArenaCanvas] Pixi init failed:", err);
+        setDebugInfo(`pixi: FAILED — ${String(err)}`);
+      });
+
+    const handleResize = () => {
+      if (!container || !rendererRef.current) return;
+      rendererRef.current.resize(container.clientWidth, container.clientHeight);
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener("resize", handleResize);
+      if (initDoneRef.current) {
+        rendererRef.current?.destroy();
+        rendererRef.current = null;
+        try { app.destroy(true); } catch { /* ignore */ }
+        initDoneRef.current = false;
+      }
+      lastTickRef.current = -1;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Init sprites once renderer is ready and players arrive (covers the case where players
+  // arrive after Pixi init, e.g. slow socket)
+  useEffect(() => {
+    const r = rendererRef.current;
+    if (!r || players.length === 0) return;
+    if (lastTickRef.current !== -1) return; // already ticking, don't re-init
+    console.log("[ArenaCanvas] players effect: initPlayers count=", players.length);
+    r.initPlayers(players, arenaW, arenaH);
+    setDebugInfo(`pixi: ready | sprites: ${players.length} | tick: 0`);
+  }, [players, arenaW, arenaH]);
+
+  // Drive renderer every server tick
+  useEffect(() => {
+    const r = rendererRef.current;
+    if (!r || tick === lastTickRef.current) return;
+    lastTickRef.current = tick;
+
+    console.log("[ArenaCanvas] tick", tick, "players:", players.length, "actions:", pendingActions.length);
+    r.update(players, pendingActions);
+    setDebugInfo(`pixi: ready | sprites: ${players.length} | tick: ${tick}`);
+    if (pendingActions.length > 0) clearPendingActions();
+  }, [tick, players, pendingActions, clearPendingActions]);
+
+  return (
+    <div className="relative w-full h-full">
+      <div
+        ref={canvasRef}
+        className="w-full h-full"
+        style={{ touchAction: "none", overflow: "hidden" }}
+      />
+      {/* Visible render diagnostic — remove once working */}
+      <div className="absolute bottom-1 left-1 z-50 bg-black/80 text-yellow-300 text-[10px] px-2 py-1 rounded font-mono pointer-events-none">
+        {debugInfo}
+      </div>
+    </div>
+  );
+}

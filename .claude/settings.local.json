@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://pokeapi.co/api/v2/pokemon/1\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('Keys:', list\\(d.keys\\(\\)\\)[:15]\\)\")",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/move/tackle\")",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/type/fire\")",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/pokemon-species/1\")",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/generation/1\")",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/pokemon?limit=1\")",
+      "Bash(curl -s \"https://pokeapi.co/api/v2/move?limit=1\")",
+      "Bash(curl *)",
+      "Bash(docker --version)",
+      "Bash(docker compose *)",
+      "Bash(npm info *)"
+    ]
+  }
+}

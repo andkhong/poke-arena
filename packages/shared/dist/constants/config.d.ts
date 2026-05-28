@@ -1,0 +1,12 @@
+export declare const TICK_RATE_MS = 50;
+export declare const BASE_COOLDOWN_TICKS = 60;
+export declare const MOVEMENT_SPEED_BASE = 1.5;
+export declare const ARENA_WIDTH = 1200;
+export declare const ARENA_HEIGHT = 800;
+export declare const POKEMON_LEVEL = 50;
+export declare const MOVES_PER_POKEMON = 4;
+export declare const MELEE_RANGE = 80;
+export declare const RANGED_RANGE = 220;
+export declare const AOE_RANGE = 200;
+export declare const SPAWN_RADIUS = 300;
+export declare const STAT_STAGE_MULTIPLIERS: Record<number, [number, number]>;
