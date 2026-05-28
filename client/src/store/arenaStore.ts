@@ -40,6 +40,7 @@ interface ArenaState {
   roomId: string | null;
   arenaW: number;
   arenaH: number;
+  startsAt: number;
   players: ArenaPlayerInfo[];
   tick: number;
   timeRemaining: number;
@@ -60,6 +61,7 @@ const initialState = {
   roomId: null,
   arenaW: 1200,
   arenaH: 800,
+  startsAt: 0,
   players: [] as ArenaPlayerInfo[],
   tick: 0,
   timeRemaining: 180000,
@@ -76,6 +78,7 @@ export const useArenaStore = create<ArenaState>((set) => ({
       roomId: payload.roomId,
       arenaW: payload.arenaW,
       arenaH: payload.arenaH,
+      startsAt: payload.startsAt,
       players: payload.players,
       timeRemaining: payload.timeLimit,
       tick: 0,
