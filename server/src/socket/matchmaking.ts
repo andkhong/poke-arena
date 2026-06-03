@@ -22,8 +22,9 @@ const queueTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function buildHumanPlayer(entry: QueueEntry) {
   const pokemon = await getCachedPokemonById(entry.pokemonId);
+  if (!pokemon) throw new Error(`Pokemon ${entry.pokemonId} not found — cannot start match`);
   const moves = await getRandomMoves(entry.pokemonId, 4);
-  return { ...entry, pokemonData: pokemon!, moves, isAI: false };
+  return { ...entry, pokemonData: pokemon, moves, isAI: false };
 }
 
 async function buildAIPlayer(index: number) {
@@ -74,6 +75,14 @@ async function spawnRoom(
   console.log("[spawnRoom] allPlayers after filter", allPlayers.length);
   if (allPlayers.length < 2) {
     console.log("[spawnRoom] EARLY RETURN — not enough players");
+    // Don't fail silently — tell the human player(s) so the client leaves the spinner.
+    for (const p of humanPlayers) {
+      const socket = resolveSocket(io, p.socketId, directSockets);
+      socket?.emit("error:socket", {
+        code: "MATCH_FAILED",
+        message: "Could not start the match — not enough valid players.",
+      });
+    }
     return;
   }
 

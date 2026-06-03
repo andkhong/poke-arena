@@ -10,6 +10,8 @@ export class PokemonSprite {
   private isShaking = false;
   private isLunging = false;
   private isDestroyed = false;
+  private isFainting = false;
+  private lastHp = Infinity;
   pokemonId: number;
 
   constructor(pokemonId: number, spriteUrl: string, _maxHp: number, _displayName: string, _isMe: boolean) {
@@ -83,8 +85,32 @@ export class PokemonSprite {
   }
 
   updateHP(hp: number): void {
-    if (hp <= 0) this.container.alpha = 0.3;
-    else this.container.alpha = 1;
+    const wasAlive = this.lastHp > 0;
+    this.lastHp = hp;
+    if (hp <= 0) {
+      if (wasAlive && !this.isFainting) this.playFaint();
+      else if (!this.isFainting) this.container.alpha = 0.08;
+    } else {
+      this.container.alpha = 1;
+    }
+  }
+
+  private playFaint(): void {
+    this.isFainting = true;
+    let flash = 0;
+    const totalFlashes = 6;
+    const step = () => {
+      if (this.isDestroyed) return;
+      if (flash >= totalFlashes) {
+        this.container.alpha = 0.08;
+        this.isFainting = false;
+        return;
+      }
+      this.container.alpha = flash % 2 === 0 ? 0.05 : 1;
+      flash++;
+      setTimeout(step, 65);
+    };
+    step();
   }
 
   updateFacing(facingRight: boolean): void {

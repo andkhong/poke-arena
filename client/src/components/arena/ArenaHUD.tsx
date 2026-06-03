@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useArenaStore } from "../../store/arenaStore";
 import { useAuthStore } from "../../store/authStore";
 import type { ArenaPlayerInfo } from "../../store/arenaStore";
@@ -16,6 +17,72 @@ const STATUS_LABELS: Record<string, { label: string; bg: string; color: string }
   freeze:    { label: "FRZ", bg: "#50a0c0", color: "#fff" },
 };
 
+const ALIVE_NAMES = ["", "ONE", "TWO", "THREE", "FOUR", "FIVE"];
+
+function ArenaAnnouncement({ alive }: { alive: number }) {
+  const [msg, setMsg] = useState<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevAliveRef = useRef(alive);
+
+  useEffect(() => {
+    if (alive >= prevAliveRef.current) {
+      prevAliveRef.current = alive;
+      return;
+    }
+    prevAliveRef.current = alive;
+    if (alive < 1 || alive > 5) return;
+    const text = alive === 1 ? "LAST ONE STANDING!" : `ONLY ${ALIVE_NAMES[alive]} LEFT!`;
+    setMsg(text);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setMsg(null), 2600);
+  }, [alive]);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
+  if (!msg) return null;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: "14%",
+        left: "50%",
+        zIndex: 30,
+        pointerEvents: "none",
+        transform: "translateX(-50%) skewX(-8deg)",
+      }}
+    >
+      <div
+        style={{
+          background: "#cc1a0a",
+          padding: "9px 32px",
+          boxShadow: "4px 4px 0 rgba(0,0,0,0.45)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          whiteSpace: "nowrap",
+        }}
+      >
+        <span style={{ color: "#fff", fontSize: 17, display: "inline-block", transform: "skewX(8deg)" }}>⚠</span>
+        <span
+          style={{
+            color: "#fff",
+            fontFamily: "monospace",
+            fontSize: 15,
+            fontWeight: 900,
+            letterSpacing: "0.18em",
+            display: "inline-block",
+            transform: "skewX(8deg)",
+            textShadow: "1px 1px 0 rgba(0,0,0,0.4)",
+          }}
+        >
+          {msg}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
   const pct = p.pokemon.maxHp > 0 ? p.pokemon.currentHp / p.pokemon.maxHp : 0;
   const alive = p.pokemon.isAlive;
@@ -25,13 +92,12 @@ function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
   return (
     <div
       className="flex items-center gap-1"
-      style={{ opacity: alive ? 1 : 0.45 }}
+      style={{ opacity: alive ? 1 : 0.6 }}
     >
-      {/* Black left-pointing triangle */}
+      {/* Left-pointing triangle */}
       <div
         style={{
-          width: 0,
-          height: 0,
+          width: 0, height: 0,
           borderTop: "6px solid transparent",
           borderBottom: "6px solid transparent",
           borderRight: "9px solid #111111",
@@ -39,7 +105,6 @@ function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
         }}
       />
 
-      {/* Name + HP bar card */}
       <div
         style={{
           background: "rgba(240,232,200,0.94)",
@@ -54,32 +119,19 @@ function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
         <div className="flex items-center gap-1 mb-1">
           <span
             style={{
-              fontFamily: "monospace",
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              color: "#111",
-              lineHeight: 1,
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              fontFamily: "monospace", fontSize: 11, fontWeight: 800,
+              letterSpacing: "0.06em", color: "#111", lineHeight: 1,
+              flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}
           >
             {p.pokemon.displayName.toUpperCase()}
           </span>
-          {statusInfo && (
+          {statusInfo && alive && (
             <span
               style={{
-                fontSize: 8,
-                fontFamily: "monospace",
-                fontWeight: 700,
-                background: statusInfo.bg,
-                color: statusInfo.color,
-                borderRadius: 2,
-                padding: "1px 3px",
-                lineHeight: 1,
-                flexShrink: 0,
+                fontSize: 8, fontFamily: "monospace", fontWeight: 700,
+                background: statusInfo.bg, color: statusInfo.color,
+                borderRadius: 2, padding: "1px 3px", lineHeight: 1, flexShrink: 0,
               }}
             >
               {statusInfo.label}
@@ -87,25 +139,28 @@ function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
           )}
         </div>
 
-        {/* HP bar */}
-        <div
-          style={{
-            height: 7,
-            background: "#e0e0e0",
-            border: "1px solid #999",
-            borderRadius: 2,
-            overflow: "hidden",
-          }}
-        >
+        {/* HP bar or OUT label */}
+        {alive ? (
+          <div style={{ height: 7, background: "#e0e0e0", border: "1px solid #999", borderRadius: 2, overflow: "hidden" }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.max(0, pct * 100).toFixed(1)}%`,
+                background: fill,
+                transition: "width 0.15s ease-out, background 0.3s",
+              }}
+            />
+          </div>
+        ) : (
           <div
             style={{
-              height: "100%",
-              width: `${Math.max(0, pct * 100).toFixed(1)}%`,
-              background: fill,
-              transition: "width 0.15s ease-out, background 0.3s",
+              fontFamily: "monospace", fontSize: 11, fontWeight: 900,
+              letterSpacing: "0.12em", color: "#cc0000", lineHeight: 1,
             }}
-          />
-        </div>
+          >
+            OUT
+          </div>
+        )}
       </div>
     </div>
   );
@@ -120,13 +175,12 @@ function RightPlayerEntry({ p }: { p: ArenaPlayerInfo }) {
   return (
     <div
       className="flex items-center gap-1"
-      style={{ opacity: alive ? 1 : 0.45, flexDirection: "row-reverse" }}
+      style={{ opacity: alive ? 1 : 0.6, flexDirection: "row-reverse" }}
     >
-      {/* Black right-pointing triangle */}
+      {/* Right-pointing triangle */}
       <div
         style={{
-          width: 0,
-          height: 0,
+          width: 0, height: 0,
           borderTop: "6px solid transparent",
           borderBottom: "6px solid transparent",
           borderLeft: "9px solid #111111",
@@ -134,7 +188,6 @@ function RightPlayerEntry({ p }: { p: ArenaPlayerInfo }) {
         }}
       />
 
-      {/* Name + HP bar card */}
       <div
         style={{
           background: "rgba(240,232,200,0.94)",
@@ -149,33 +202,20 @@ function RightPlayerEntry({ p }: { p: ArenaPlayerInfo }) {
         <div className="flex items-center gap-1 mb-1" style={{ flexDirection: "row-reverse" }}>
           <span
             style={{
-              fontFamily: "monospace",
-              fontSize: 11,
-              fontWeight: 800,
-              letterSpacing: "0.06em",
-              color: "#111",
-              lineHeight: 1,
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              fontFamily: "monospace", fontSize: 11, fontWeight: 800,
+              letterSpacing: "0.06em", color: "#111", lineHeight: 1,
+              flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               textAlign: "right",
             }}
           >
             {p.pokemon.displayName.toUpperCase()}
           </span>
-          {statusInfo && (
+          {statusInfo && alive && (
             <span
               style={{
-                fontSize: 8,
-                fontFamily: "monospace",
-                fontWeight: 700,
-                background: statusInfo.bg,
-                color: statusInfo.color,
-                borderRadius: 2,
-                padding: "1px 3px",
-                lineHeight: 1,
-                flexShrink: 0,
+                fontSize: 8, fontFamily: "monospace", fontWeight: 700,
+                background: statusInfo.bg, color: statusInfo.color,
+                borderRadius: 2, padding: "1px 3px", lineHeight: 1, flexShrink: 0,
               }}
             >
               {statusInfo.label}
@@ -183,25 +223,29 @@ function RightPlayerEntry({ p }: { p: ArenaPlayerInfo }) {
           )}
         </div>
 
-        {/* HP bar */}
-        <div
-          style={{
-            height: 7,
-            background: "#e0e0e0",
-            border: "1px solid #999",
-            borderRadius: 2,
-            overflow: "hidden",
-          }}
-        >
+        {/* HP bar or OUT label */}
+        {alive ? (
+          <div style={{ height: 7, background: "#e0e0e0", border: "1px solid #999", borderRadius: 2, overflow: "hidden" }}>
+            <div
+              style={{
+                height: "100%",
+                width: `${Math.max(0, pct * 100).toFixed(1)}%`,
+                background: fill,
+                transition: "width 0.15s ease-out, background 0.3s",
+              }}
+            />
+          </div>
+        ) : (
           <div
             style={{
-              height: "100%",
-              width: `${Math.max(0, pct * 100).toFixed(1)}%`,
-              background: fill,
-              transition: "width 0.15s ease-out, background 0.3s",
+              fontFamily: "monospace", fontSize: 11, fontWeight: 900,
+              letterSpacing: "0.12em", color: "#cc0000", lineHeight: 1,
+              textAlign: "right",
             }}
-          />
-        </div>
+          >
+            OUT
+          </div>
+        )}
       </div>
     </div>
   );
@@ -233,6 +277,9 @@ export function ArenaHUD() {
   return (
     <div className="absolute inset-0 pointer-events-none z-10">
 
+      {/* Milestone announcements */}
+      <ArenaAnnouncement alive={alive} />
+
       {/* Left sidebar */}
       <div className="absolute top-0 left-0 flex flex-col gap-1.5 pt-2 pl-1">
         {leftPlayers.map((p) => (
@@ -240,7 +287,7 @@ export function ArenaHUD() {
         ))}
       </div>
 
-      {/* Right sidebar — flip the triangle to point right */}
+      {/* Right sidebar */}
       <div className="absolute top-0 right-0 flex flex-col gap-1.5 pt-2 pr-1" style={{ alignItems: "flex-end" }}>
         {rightPlayers.map((p) => (
           <RightPlayerEntry key={p.pokemon.pokemonId} p={p} />
@@ -269,15 +316,12 @@ export function ArenaHUD() {
         </div>
       </div>
 
-      {/* My Pokemon quick info — DS-style bottom panel */}
+      {/* My Pokemon quick info — bottom panel */}
       {me && me.pokemon.isAlive && (
-        <div
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1"
-        >
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1">
           <div
             style={{
-              width: 0,
-              height: 0,
+              width: 0, height: 0,
               borderTop: "6px solid transparent",
               borderBottom: "6px solid transparent",
               borderRight: "9px solid #111",

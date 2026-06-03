@@ -2,6 +2,7 @@ import {
   getTypeEffectiveness,
   BASE_COOLDOWN_TICKS,
   MOVEMENT_SPEED_BASE,
+  MOVEMENT_SPEED_MIN,
   POKEMON_LEVEL,
   MELEE_RANGE,
   RANGED_RANGE,
@@ -20,7 +21,7 @@ export function computeInitialCooldown(speed: number): number {
 // ─── Movement ────────────────────────────────────────────────────────────────
 
 export function computeMovementSpeed(speed: number): number {
-  return MOVEMENT_SPEED_BASE * (speed / 100);
+  return Math.max(MOVEMENT_SPEED_MIN, MOVEMENT_SPEED_BASE * (speed / 100));
 }
 
 export function distanceBetween(a: BattlePokemon, b: BattlePokemon): number {

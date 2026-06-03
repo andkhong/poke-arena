@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { getSocket } from "../socket";
+import { getSocket, connectSocket } from "../socket";
 import { useArenaStore } from "../store/arenaStore";
 import { useMatchmakingStore } from "../store/matchmakingStore";
 import { useAuthStore } from "../store/authStore";
@@ -10,7 +10,16 @@ export function useArenaSocket() {
   const navigate = useNavigate();
   const { setMatchStart, applyTick, addAction, addElimination, setResult } = useArenaStore();
   const { setMatched, setIdle } = useMatchmakingStore();
-  const { updateRecord } = useAuthStore();
+  const { updateRecord, token, logout } = useAuthStore();
+  // Guards the connect_error handler so the logout/redirect fires once, not on every retry.
+  const handledConnectErrorRef = useRef(false);
+
+  // Connect the socket whenever we have a token. authStore only calls connectSocket() inside
+  // login(); on a page refresh the token is rehydrated but never reconnected, so the socket
+  // stays disconnected until a match click — and any handshake rejection is then invisible.
+  useEffect(() => {
+    if (token) connectSocket(token);
+  }, [token]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -57,9 +66,22 @@ export function useArenaSocket() {
     registerAll();
     socket.on("connect", () => {
       console.log("[socket] connected id=", socket.id);
+      handledConnectErrorRef.current = false;
       registerAll();
     });
-    socket.on("connect_error", (err) => console.error("[socket] connect_error", err.message));
+    function onConnectError(err: Error) {
+      console.error("[socket] connect_error", err.message);
+      if (handledConnectErrorRef.current) return;
+      // Auth rejections from the io.use middleware: "Missing token" / "Invalid token" / "Token revoked".
+      if (/token/i.test(err.message)) {
+        handledConnectErrorRef.current = true;
+        setIdle(); // clear any "queuing" state so the user isn't left on the spinner
+        logout(); // drop the stale token and disconnect, stopping the retry loop
+        alert("Your session has expired. Please log in again.");
+        navigate("/login");
+      }
+    }
+    socket.on("connect_error", onConnectError);
     socket.on("disconnect", (reason) => console.log("[socket] disconnected", reason));
 
     return () => {
@@ -74,5 +96,5 @@ export function useArenaSocket() {
       socket.off("connect_error");
       socket.off("disconnect");
     };
-  }, [navigate, setMatchStart, applyTick, addAction, addElimination, setResult, setMatched, setIdle, updateRecord]);
+  }, [navigate, setMatchStart, applyTick, addAction, addElimination, setResult, setMatched, setIdle, updateRecord, logout]);
 }

@@ -3,6 +3,7 @@ import { ArenaRoom, generateSpawnPositions } from "./arenaRoom";
 import { computeInitialCooldown, defaultStatStages } from "./arenaEngine";
 import type { ArenaPlayer } from "@poke-arena/shared";
 import type { BattlePokemon, MoveData } from "@poke-arena/shared";
+import { POKEMON_LEVEL } from "@poke-arena/shared";
 import type { Move } from "@prisma/client";
 
 const rooms = new Map<string, ArenaRoom>();
@@ -71,8 +72,8 @@ export function createRoom(
         specialDef: p.pokemonData.specialDef,
         speed: p.pokemonData.speed,
       },
-      currentHp: p.pokemonData.hp,
-      maxHp: p.pokemonData.hp,
+      currentHp: Math.floor(2 * p.pokemonData.hp * POKEMON_LEVEL / 100) + POKEMON_LEVEL + 10,
+      maxHp: Math.floor(2 * p.pokemonData.hp * POKEMON_LEVEL / 100) + POKEMON_LEVEL + 10,
       status: null,
       statusTurnsLeft: 0,
       statStages: defaultStatStages(),

@@ -77,14 +77,16 @@ export function ArenaPage() {
   useEffect(() => {
     if (status !== "queuing" || !isBotMatch || !selectedPokemonId) return;
 
+    // Capture the narrowed (non-null) id so the nested closure keeps the type.
+    const pokemonId = selectedPokemonId;
     const socket = getSocket();
 
     function fireEmit() {
       if (botEmittedRef.current) return;
       botEmittedRef.current = true;
       socket.off("connect", fireEmit);
-      console.log("[bot] emitting queue:join pokemonId=", selectedPokemonId, "socketId=", socket.id);
-      socket.emit("queue:join", { pokemonId: selectedPokemonId, botMatch: true });
+      console.log("[bot] emitting queue:join pokemonId=", pokemonId, "socketId=", socket.id);
+      socket.emit("queue:join", { pokemonId, botMatch: true });
     }
 
     if (socket.connected) {

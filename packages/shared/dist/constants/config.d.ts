@@ -1,6 +1,7 @@
 export declare const TICK_RATE_MS = 50;
 export declare const BASE_COOLDOWN_TICKS = 60;
-export declare const MOVEMENT_SPEED_BASE = 1.5;
+export declare const MOVEMENT_SPEED_BASE = 2;
+export declare const MOVEMENT_SPEED_MIN = 0.7;
 export declare const ARENA_WIDTH = 1200;
 export declare const ARENA_HEIGHT = 800;
 export declare const POKEMON_LEVEL = 50;

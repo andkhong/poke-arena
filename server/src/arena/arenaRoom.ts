@@ -265,12 +265,16 @@ export class ArenaRoom extends EventEmitter {
 export function generateSpawnPositions(count: number): Array<{ x: number; y: number }> {
   const cx = ARENA_WIDTH / 2;
   const cy = ARENA_HEIGHT / 2;
+  // For 1v1 use a tighter radius so Pokemon close in ~5-8 seconds even at low speed.
+  // For larger fights the standard radius keeps adjacent players outside attack range.
+  const radius = count <= 2 ? 160 : SPAWN_RADIUS;
+  const jitterAmp = count <= 2 ? 30 : 80;
   return Array.from({ length: count }, (_, i) => {
     const angle = (i / count) * 2 * Math.PI;
-    const jitter = (Math.random() - 0.5) * 80;
+    const jitter = (Math.random() - 0.5) * jitterAmp;
     return {
-      x: Math.round(cx + (SPAWN_RADIUS + jitter) * Math.cos(angle)),
-      y: Math.round(cy + (SPAWN_RADIUS + jitter) * Math.sin(angle)),
+      x: Math.round(cx + (radius + jitter) * Math.cos(angle)),
+      y: Math.round(cy + (radius + jitter) * Math.sin(angle)),
     };
   });
 }
