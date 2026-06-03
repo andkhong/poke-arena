@@ -9,3 +9,27 @@ export function playCry(pokemonId: number, volume = 0.45): void {
     /* ignore */
   }
 }
+
+// Pokeball drop/throw sound, played as each ball falls during the summon intro.
+export function playPokeballDrop(volume = 0.4): void {
+  try {
+    const audio = new Audio(`/movesfx/pokeball-drop.wav`);
+    audio.volume = volume;
+    void audio.play().catch(() => { /* ignored if blocked */ });
+  } catch {
+    /* ignore */
+  }
+}
+
+// Per-type move sound effects (synthesized WAVs in client/public/movesfx/).
+// Status moves share one sound; everything else plays its move type's sound.
+export function playMoveSound(moveType: string, damageClass: string, volume = 0.3): void {
+  try {
+    const name = damageClass === "status" ? "status" : moveType;
+    const audio = new Audio(`/movesfx/${name}.wav`);
+    audio.volume = volume;
+    void audio.play().catch(() => { /* ignored if blocked / missing */ });
+  } catch {
+    /* ignore */
+  }
+}

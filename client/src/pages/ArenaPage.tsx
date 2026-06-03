@@ -7,7 +7,7 @@ import { ArenaResultModal } from "../components/arena/ArenaResultModal";
 import { BattleLog } from "../components/arena/BattleLog";
 import { useMatchmakingStore } from "../store/matchmakingStore";
 import { useArenaStore } from "../store/arenaStore";
-import { getSocket } from "../socket";
+import { getSocket, disconnectSocket } from "../socket";
 import type { ServerToClientEvents } from "@poke-arena/shared";
 
 function BattleCountdown({ startsAt }: { startsAt: number }) {
@@ -116,6 +116,16 @@ export function ArenaPage() {
     navigate("/select");
   }
 
+  // Leave the room early: forfeit (server KO's our Pokemon), disconnect, and return to select.
+  function handleLeaveRoom() {
+    const roomId = useArenaStore.getState().roomId;
+    if (roomId) getSocket().emit("arena:surrender", { roomId });
+    disconnectSocket();
+    useArenaStore.getState().reset();
+    setIdle();
+    navigate("/select");
+  }
+
   const showCountdown = status === "matched" && tick === 0 && startsAt > Date.now();
 
   const showBattleLog = status === "matched" || (result != null && battleLog.length > 0);
@@ -127,6 +137,15 @@ export function ArenaPage() {
           <ArenaCanvas />
           <ArenaHUD />
           {showCountdown && <BattleCountdown startsAt={startsAt} />}
+          {!result && (
+            <button
+              onClick={handleLeaveRoom}
+              className="absolute top-[76px] left-1/2 -translate-x-1/2 z-40 px-3 py-1 text-xs font-bold font-mono rounded text-white transition hover:brightness-110"
+              style={{ background: "rgba(180,30,20,0.92)", border: "1px solid rgba(0,0,0,0.45)", boxShadow: "1px 1px 0 rgba(0,0,0,0.3)" }}
+            >
+              ⤶ LEAVE MATCH
+            </button>
+          )}
         </>
       )}
 

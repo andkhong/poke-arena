@@ -10,7 +10,6 @@ interface BannerItem {
   type: string;
   xPct: number;
   yPct: number;
-  toRight: boolean;
 }
 
 export function ArenaCanvas() {
@@ -127,7 +126,6 @@ export function ArenaCanvas() {
         if (seen.has(a.attackerPokemonId)) continue;
         seen.add(a.attackerPokemonId);
         const attacker = players.find((p) => p.pokemon.pokemonId === a.attackerPokemonId);
-        const target = players.find((p) => p.pokemon.pokemonId === a.targetPokemonId);
         if (!attacker) continue;
         bannerIdRef.current++;
         newBanners.push({
@@ -136,7 +134,6 @@ export function ArenaCanvas() {
           type: a.moveType,
           xPct: (attacker.pokemon.x / arenaW) * 100,
           yPct: (attacker.pokemon.y / arenaH) * 100,
-          toRight: target ? target.pokemon.x >= attacker.pokemon.x : attacker.pokemon.facingRight,
         });
       }
       if (newBanners.length > 0) {
@@ -160,23 +157,23 @@ export function ArenaCanvas() {
       <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 15 }}>
         {banners.map((b) => {
           const bg = TYPE_COLORS[b.type] ?? "#888888";
-          const clipRight = "polygon(12px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%)";
-          const clipLeft  = "polygon(0% 0%, calc(100% - 12px) 0%, 100% 100%, 8px 100%)";
+          // Angled banner shape (parallelogram), centered directly over the casting Pokemon.
+          const clip = "polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%)";
           return (
             <div
               key={b.id}
               style={{
                 position: "absolute",
-                top: `${Math.max(4, b.yPct - 9)}%`,
-                ...(b.toRight
-                  ? { left: `${Math.min(b.xPct + 2, 54)}%` }
-                  : { right: `${Math.min(100 - b.xPct + 2, 54)}%` }),
+                left: `${Math.max(6, Math.min(94, b.xPct))}%`,
+                top: `${b.yPct}%`,
+                // base state matches the animation's resting frame so it's always centered above
+                transform: "translate(-50%, calc(-100% - 152px))",
                 background: bg,
-                clipPath: b.toRight ? clipRight : clipLeft,
-                padding: "5px 22px 5px 16px",
-                filter: "brightness(0.88) saturate(1.2)",
+                clipPath: clip,
+                padding: "5px 18px",
+                filter: "brightness(0.9) saturate(1.2)",
                 boxShadow: "2px 3px 0 rgba(0,0,0,0.4)",
-                animation: `${b.toRight ? "move-banner-right" : "move-banner-left"} 1.4s ease forwards`,
+                animation: "move-banner-pop 1.4s ease forwards",
                 whiteSpace: "nowrap",
               }}
             >

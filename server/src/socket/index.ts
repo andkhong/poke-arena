@@ -4,6 +4,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from "@poke-arena/sha
 import { verifyToken, isTokenBlocked } from "../auth/service";
 import { setupMatchmaking, joinQueue, joinBotMatch, leaveQueue } from "./matchmaking";
 import { registerArenaHandlers } from "./arenaHandler";
+import { getRoomBySocketId, destroyRoom } from "../arena/arenaManager";
 import { config } from "../config";
 
 export function attachSocketServer(httpServer: HttpServer): Server {
@@ -55,6 +56,16 @@ export function attachSocketServer(httpServer: HttpServer): Server {
 
     socket.on("disconnect", async () => {
       await leaveQueue(socket.id);
+      // If they were in an active battle, KO their Pokemon. Tear the room down once no
+      // human players remain connected (e.g. they left a bot match).
+      const room = getRoomBySocketId(socket.id);
+      if (room) {
+        room.surrender(socket.id);
+        const humansLeft = room.getState().players.some(
+          (p) => !p.isAI && p.socketId !== socket.id && io.sockets.sockets.has(p.socketId)
+        );
+        if (!humansLeft) destroyRoom(room.roomId);
+      }
     });
 
     registerArenaHandlers(socket);

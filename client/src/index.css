@@ -73,3 +73,12 @@ body {
   68%  { opacity: 1; transform: translateX(0); }
   100% { opacity: 0; transform: translateX(-8px); }
 }
+
+/* Move name banner — pops in centered above the casting Pokemon, then floats up + fades.
+   translateX(-50%) centers it on the Pokemon; the -150px lift clears the sprite (drawn upward). */
+@keyframes move-banner-pop {
+  0%   { opacity: 0; transform: translate(-50%, calc(-100% - 134px)); }
+  16%  { opacity: 1; transform: translate(-50%, calc(-100% - 152px)); }
+  76%  { opacity: 1; transform: translate(-50%, calc(-100% - 156px)); }
+  100% { opacity: 0; transform: translate(-50%, calc(-100% - 178px)); }
+}

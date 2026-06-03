@@ -10,6 +10,9 @@ function drawPokeball(g: PIXI.Graphics, r: number): void {
   g.circle(0, 0, r * 0.2).fill(0xf5f5f5);                 // button center
 }
 
+// Beat between the ball landing and the Pokemon bursting out (it wiggles, then opens).
+const SPAWN_DELAY_MS = 320;
+
 /** Plays the "send-out" intro: a spinning pokeball drops from the top, then bursts open. */
 export class SummonEffect {
   private container = new PIXI.Container();
@@ -22,8 +25,14 @@ export class SummonEffect {
     this.container.removeChildren().forEach((c) => c.destroy());
   }
 
-  /** Drop a spinning pokeball to (x, y) after delayMs, then burst open and call onOpen(). */
-  dropAndOpen(x: number, y: number, color: number, delayMs: number, onOpen: () => void): void {
+  /**
+   * Drop a spinning pokeball to (x, y) after delayMs (firing onDrop as it starts falling),
+   * then — after a short settle delay — burst open and call onOpen().
+   */
+  dropAndOpen(
+    x: number, y: number, color: number, delayMs: number,
+    onDrop: () => void, onOpen: () => void,
+  ): void {
     const ball = new PIXI.Graphics();
     drawPokeball(ball, 17);
     ball.x = x;
@@ -34,10 +43,12 @@ export class SummonEffect {
     const fromY = -70;
     const dropDur = 540;
     const startAt = Date.now() + delayMs;
+    let started = false;
 
     const animate = () => {
       const now = Date.now();
       if (now < startAt) { requestAnimationFrame(animate); return; }
+      if (!started) { started = true; onDrop(); } // play the drop sound as it begins to fall
       const t = Math.min((now - startAt) / dropDur, 1);
       ball.alpha = Math.min(1, t * 5);
       // accelerate downward, then a small bounce at the end
@@ -47,7 +58,19 @@ export class SummonEffect {
       ball.y = fromY + (y - fromY) * Math.min(1, p);
       ball.rotation += 0.45; // spin clockwise
       if (t < 1) requestAnimationFrame(animate);
-      else this.openBall(ball, x, y, color, onOpen);
+      else this.settleThenOpen(ball, x, y, color, onOpen);
+    };
+    requestAnimationFrame(animate);
+  }
+
+  /** The ball sits and wiggles for a beat, then bursts open. */
+  private settleThenOpen(ball: PIXI.Graphics, x: number, y: number, color: number, onOpen: () => void): void {
+    const start = Date.now();
+    const animate = () => {
+      const t = Math.min((Date.now() - start) / SPAWN_DELAY_MS, 1);
+      ball.rotation = Math.sin(t * Math.PI * 5) * 0.24 * (1 - t); // rock side to side, fading
+      if (t < 1) requestAnimationFrame(animate);
+      else { ball.rotation = 0; this.openBall(ball, x, y, color, onOpen); }
     };
     requestAnimationFrame(animate);
   }

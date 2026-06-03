@@ -3,7 +3,7 @@ import { ArenaBackground } from "./ArenaBackground";
 import { PokemonSprite } from "./PokemonSprite";
 import { MoveEffect } from "./MoveEffect";
 import { SummonEffect } from "./SummonEffect";
-import { playCry } from "./audio";
+import { playCry, playMoveSound, playPokeballDrop } from "./audio";
 import { TYPE_COLORS } from "../styles/typeColors";
 import type { ArenaPlayerInfo, PendingAction } from "../store/arenaStore";
 
@@ -84,10 +84,14 @@ export class ArenaRenderer {
     const STAGGER = 320;
     created.forEach((c, i) => {
       const color = typeColor(c.p.pokemon.types?.[0] ?? "normal");
-      this.summon.dropAndOpen(c.sx, c.sy - 22, color, 300 + i * STAGGER, () => {
-        c.sprite.popIn();
-        playCry(c.p.pokemon.pokemonId);
-      });
+      this.summon.dropAndOpen(
+        c.sx, c.sy - 22, color, 300 + i * STAGGER,
+        () => playPokeballDrop(),
+        () => {
+          c.sprite.popIn();
+          playCry(c.p.pokemon.pokemonId);
+        },
+      );
     });
   }
 
@@ -135,6 +139,7 @@ export class ArenaRenderer {
 
       if (!action.missed) {
         if (target) target.playHit();
+        playMoveSound(action.moveType, action.damageClass);
         this.moveEffect.fire(ax, ay, tx, ty, action.moveType, action.damageClass, action.isAoe, action.effectiveness, action.isCrit);
         if (target) this.moveEffect.showDamage(tx, ty, action.damageDealt, action.effectiveness, action.isCrit);
       }

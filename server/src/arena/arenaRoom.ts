@@ -255,6 +255,17 @@ export class ArenaRoom extends EventEmitter {
     }
   }
 
+  /** A player leaves early: KO their Pokemon, record the elimination, and end if only one remains. */
+  surrender(socketId: string): void {
+    if (this.state.status === "ended") return;
+    const player = this.state.players.find((p) => p.socketId === socketId);
+    if (!player || !player.pokemon.isAlive) return;
+    player.pokemon.isAlive = false;
+    player.pokemon.currentHp = 0;
+    this.checkElimination(player.pokemon);
+    if (this.alivePokemon().length <= 1) this.endArena("lastalive");
+  }
+
   private endArena(reason: "lastalive" | "timeout" | "alldisconnected"): void {
     if (this.state.status === "ended") return;
     this.state.status = "ended";

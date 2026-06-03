@@ -104,6 +104,13 @@ export function getRoom(roomId: string): ArenaRoom | undefined {
   return rooms.get(roomId);
 }
 
+export function getRoomBySocketId(socketId: string): ArenaRoom | undefined {
+  for (const room of rooms.values()) {
+    if (room.getSocketIds().includes(socketId)) return room;
+  }
+  return undefined;
+}
+
 export function destroyRoom(roomId: string): void {
   const room = rooms.get(roomId);
   if (room) {
