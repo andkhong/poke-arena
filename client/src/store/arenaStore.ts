@@ -134,6 +134,24 @@ export const useArenaStore = create<ArenaState>((set) => ({
 
   addAction: (payload) =>
     set((state) => {
+      const pendingAction: PendingAction = {
+        attackerPokemonId: payload.attackerPokemonId,
+        targetPokemonId: payload.targetPokemonId,
+        moveDisplayName: payload.moveDisplayName,
+        moveType: payload.moveType,
+        damageClass: payload.damageClass,
+        isAoe: payload.isAoe,
+        effectiveness: payload.effectiveness,
+        isCrit: payload.isCrit,
+        damageDealt: payload.damageDealt,
+        missed: payload.missed,
+      };
+
+      // Whiff (no target): still animate the swing, but keep it out of the battle log.
+      if (payload.targetPokemonId < 0) {
+        return { pendingActions: [...state.pendingActions, pendingAction] };
+      }
+
       const attacker = state.players.find((p) => p.pokemon.pokemonId === payload.attackerPokemonId);
       const target = state.players.find((p) => p.pokemon.pokemonId === payload.targetPokemonId);
       const seq = state._logSeq + 1;
@@ -157,21 +175,7 @@ export const useArenaStore = create<ArenaState>((set) => ({
       return {
         _logSeq: seq,
         battleLog: [logEntry, ...state.battleLog].slice(0, 200),
-        pendingActions: [
-          ...state.pendingActions,
-          {
-            attackerPokemonId: payload.attackerPokemonId,
-            targetPokemonId: payload.targetPokemonId,
-            moveDisplayName: payload.moveDisplayName,
-            moveType: payload.moveType,
-            damageClass: payload.damageClass,
-            isAoe: payload.isAoe,
-            effectiveness: payload.effectiveness,
-            isCrit: payload.isCrit,
-            damageDealt: payload.damageDealt,
-            missed: payload.missed,
-          },
-        ],
+        pendingActions: [...state.pendingActions, pendingAction],
       };
     }),
 

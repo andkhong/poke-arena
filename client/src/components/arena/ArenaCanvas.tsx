@@ -136,7 +136,7 @@ export function ArenaCanvas() {
           type: a.moveType,
           xPct: (attacker.pokemon.x / arenaW) * 100,
           yPct: (attacker.pokemon.y / arenaH) * 100,
-          toRight: target ? target.pokemon.x >= attacker.pokemon.x : attacker.pokemon.x < arenaW / 2,
+          toRight: target ? target.pokemon.x >= attacker.pokemon.x : attacker.pokemon.facingRight,
         });
       }
       if (newBanners.length > 0) {

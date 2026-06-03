@@ -2,13 +2,21 @@ import * as PIXI from "pixi.js";
 import { ArenaBackground } from "./ArenaBackground";
 import { PokemonSprite } from "./PokemonSprite";
 import { MoveEffect } from "./MoveEffect";
+import { SummonEffect } from "./SummonEffect";
+import { playCry } from "./audio";
+import { TYPE_COLORS } from "../styles/typeColors";
 import type { ArenaPlayerInfo, PendingAction } from "../store/arenaStore";
+
+function typeColor(t: string): number {
+  return parseInt((TYPE_COLORS[t] ?? "#dddddd").replace("#", ""), 16);
+}
 
 export class ArenaRenderer {
   private app: PIXI.Application;
   private background: ArenaBackground;
   private sprites = new Map<number, PokemonSprite>();
   private moveEffect: MoveEffect;
+  private summon: SummonEffect;
   private logicalW = 1200;
   private logicalH = 800;
 
@@ -16,27 +24,25 @@ export class ArenaRenderer {
     this.app = app;
     this.background = new ArenaBackground(app.canvas.width, app.canvas.height);
     this.moveEffect = new MoveEffect();
+    this.summon = new SummonEffect();
     this.app.stage.addChild(this.background.getContainer());
-    // sprites added in initPlayers, then moveEffect on top
+    // sprites added in initPlayers, then summon + moveEffect on top
   }
 
   initPlayers(players: ArenaPlayerInfo[], arenaW: number, arenaH: number): void {
     this.logicalW = arenaW;
     this.logicalH = arenaH;
 
-    console.log("[ArenaRenderer] initPlayers count=", players.length, "arenaW=", arenaW, "arenaH=", arenaH,
-      "canvasW=", this.app.canvas.width, "canvasH=", this.app.canvas.height);
-
     // Clear existing
     for (const [, sprite] of this.sprites) sprite.destroy();
     this.sprites.clear();
+    this.summon.clear();
+
+    const cx = this.app.canvas.width / 2;
+    const cy = this.app.canvas.height / 2;
+    const created: Array<{ p: ArenaPlayerInfo; sprite: PokemonSprite; sx: number; sy: number }> = [];
 
     for (const p of players) {
-      const url = p.pokemon.spriteUrl; // always front-facing sprite
-      console.log("[ArenaRenderer] creating sprite id=", p.pokemon.pokemonId,
-        "name=", p.pokemon.displayName, "x=", p.pokemon.x, "y=", p.pokemon.y,
-        "isMe=", p.isMe, "url=", url);
-
       // Compute initial facing toward nearest enemy, ignoring server's hardcoded facingRight: true
       const others = players.filter((o) => o.pokemon.pokemonId !== p.pokemon.pokemonId);
       let facingRight = true;
@@ -50,28 +56,39 @@ export class ArenaRenderer {
       }
 
       const s = new PokemonSprite(
-        p.pokemon.pokemonId,
-        url,
-        p.pokemon.maxHp,
-        p.pokemon.displayName,
-        p.isMe
+        p.pokemon.pokemonId, p.pokemon.spriteUrl, p.pokemon.maxHp, p.pokemon.displayName, p.isMe
       );
-      const cx = (p.pokemon.x / arenaW) * this.app.canvas.width;
-      const cy = (p.pokemon.y / arenaH) * this.app.canvas.height;
-      console.log("[ArenaRenderer] sprite canvas pos=", cx.toFixed(0), cy.toFixed(0), "facingRight=", facingRight);
-
       s.setPosition(
         p.pokemon.x, p.pokemon.y,
         this.logicalW, this.logicalH,
         this.app.canvas.width, this.app.canvas.height
       );
       s.updateFacing(facingRight);
+      s.hideForSummon();
       this.sprites.set(p.pokemon.pokemonId, s);
       this.app.stage.addChild(s.getContainer());
+
+      const sx = (p.pokemon.x / arenaW) * this.app.canvas.width;
+      const sy = (p.pokemon.y / arenaH) * this.app.canvas.height;
+      created.push({ p, sprite: s, sx, sy });
     }
-    // Keep moveEffect on top of all sprites
+
+    // Pokeballs + move effects render above the sprites
+    this.app.stage.addChild(this.summon.getContainer());
     this.app.stage.addChild(this.moveEffect.getContainer());
-    console.log("[ArenaRenderer] stage children count=", this.app.stage.children.length);
+
+    // Summon each Pokemon in CLOCKWISE order from the top: a pokeball drops in and pops open.
+    created.sort((a, b) =>
+      Math.atan2(a.sx - cx, -(a.sy - cy)) - Math.atan2(b.sx - cx, -(b.sy - cy))
+    );
+    const STAGGER = 320;
+    created.forEach((c, i) => {
+      const color = typeColor(c.p.pokemon.types?.[0] ?? "normal");
+      this.summon.dropAndOpen(c.sx, c.sy - 22, color, 300 + i * STAGGER, () => {
+        c.sprite.popIn();
+        playCry(c.p.pokemon.pokemonId);
+      });
+    });
   }
 
   update(
@@ -92,13 +109,24 @@ export class ArenaRenderer {
     // Process pending actions (animations)
     for (const action of pendingActions) {
       const attacker = this.sprites.get(action.attackerPokemonId);
+      if (!attacker) continue;
+      // targetPokemonId < 0 (or a missing sprite) means a whiff — the move hits nothing.
       const target = this.sprites.get(action.targetPokemonId);
-      if (!attacker || !target) continue;
 
       const ax = attacker.getContainer().x;
       const ay = attacker.getContainer().y;
-      const tx = target.getContainer().x;
-      const ty = target.getContainer().y;
+
+      let tx: number, ty: number;
+      if (target) {
+        tx = target.getContainer().x;
+        ty = target.getContainer().y;
+      } else {
+        // Whiff: aim the attack ahead, in the attacker's facing direction.
+        const ap = players.find((p) => p.pokemon.pokemonId === action.attackerPokemonId);
+        const facing = ap?.pokemon.facingRight ?? true;
+        tx = ax + (facing ? 1 : -1) * 170;
+        ty = ay + (Math.random() - 0.5) * 30;
+      }
 
       // Physical moves lunge, special/status moves don't
       if (action.damageClass === "physical") {
@@ -106,9 +134,9 @@ export class ArenaRenderer {
       }
 
       if (!action.missed) {
-        target.playHit();
+        if (target) target.playHit();
         this.moveEffect.fire(ax, ay, tx, ty, action.moveType, action.damageClass, action.isAoe, action.effectiveness, action.isCrit);
-        this.moveEffect.showDamage(tx, ty, action.damageDealt, action.effectiveness, action.isCrit);
+        if (target) this.moveEffect.showDamage(tx, ty, action.damageDealt, action.effectiveness, action.isCrit);
       }
     }
   }

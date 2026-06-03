@@ -5,7 +5,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { createRoom, destroyRoom } from "../arena/arenaManager";
 import { getRandomMoves } from "../pokemon/service";
-import { getCachedPokemonById, getRandomCachedPokemon } from "../cache/pokemonCache";
+import { getCachedPokemonById, getRandomCachedPokemonMany } from "../cache/pokemonCache";
 import { updateLeaderboard } from "../leaderboard/service";
 
 const QUEUE_KEY = "pa:queue";
@@ -27,20 +27,27 @@ async function buildHumanPlayer(entry: QueueEntry) {
   return { ...entry, pokemonData: pokemon, moves, isAI: false };
 }
 
-async function buildAIPlayer(index: number) {
-  const pokemon = await getRandomCachedPokemon();
-  if (!pokemon) throw new Error("No Pokemon found in cache — cache may not be warmed yet");
-  const moves = await getRandomMoves(pokemon.id, 4);
-  return {
-    socketId: `ai-${index}-${Date.now()}`,
-    userId: `ai-${index}`,
-    username: `CPU ${pokemon.displayName}`,
-    pokemonId: pokemon.id,
-    joinedAt: Date.now(),
-    pokemonData: pokemon,
-    moves,
-    isAI: true,
-  };
+async function buildAIPlayers(count: number, excludeIds: number[]) {
+  if (count <= 0) return [];
+  const pokemons = await getRandomCachedPokemonMany(count, excludeIds);
+  if (pokemons.length === 0) {
+    throw new Error("No Pokemon found in cache — cache may not be warmed yet");
+  }
+  return Promise.all(
+    pokemons.map(async (pokemon, index) => {
+      const moves = await getRandomMoves(pokemon.id, 4);
+      return {
+        socketId: `ai-${index}-${Date.now()}`,
+        userId: `ai-${index}`,
+        username: `CPU ${pokemon.displayName}`,
+        pokemonId: pokemon.id,
+        joinedAt: Date.now(),
+        pokemonData: pokemon,
+        moves,
+        isAI: true,
+      };
+    })
+  );
 }
 
 type IoSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -61,13 +68,15 @@ async function spawnRoom(
   directSockets: Map<string, IoSocket> = new Map()
 ): Promise<void> {
   console.log("[spawnRoom] start", { entries: entries.length, withAI, isBotMatch });
-  const aiSlots = withAI ? Math.max(0, config.MIN_ARENA_PLAYERS - entries.length) : 0;
-  console.log("[spawnRoom] aiSlots", aiSlots);
 
   const humanPlayers = await Promise.all(entries.map(buildHumanPlayer));
-  const aiPlayers = await Promise.all(
-    Array.from({ length: aiSlots }, (_, i) => buildAIPlayer(i))
-  );
+  // Fill the arena with AI so battles always have a full lobby of distinct Pokemon.
+  const targetSize = withAI ? config.MAX_ARENA_PLAYERS : humanPlayers.length;
+  const aiSlots = Math.max(0, targetSize - humanPlayers.length);
+  const excludeIds = humanPlayers.map((p) => p.pokemonId);
+  console.log("[spawnRoom] aiSlots", aiSlots, "targetSize", targetSize);
+
+  const aiPlayers = await buildAIPlayers(aiSlots, excludeIds);
 
   console.log("[spawnRoom] humanPlayers built", humanPlayers.length, "aiPlayers built", aiPlayers.length);
 
@@ -142,11 +151,12 @@ async function spawnRoom(
         isAI: ap.isAI,
       })),
       timeLimit: config.ARENA_TIME_LIMIT_MS,
-      startsAt: Date.now() + 3000,
+      // 5s pre-battle window so the pokeball summon intro can play before fighting starts.
+      startsAt: Date.now() + 5000,
     });
   }
 
-  room.start(3000);
+  room.start(5000);
 }
 
 export function setupMatchmaking(

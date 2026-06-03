@@ -12,6 +12,14 @@ import {
 import type { BattlePokemon, MoveData, StatStages, StatusCondition } from "@poke-arena/shared";
 import type { ResolvedAction } from "@poke-arena/shared";
 
+// ─── Playable bounds ──────────────────────────────────────────────────────────
+// Pokemon are kept inside these margins so their sprites stay fully on-screen. The top
+// margin is the largest because sprites are bottom-anchored and drawn UPWARD (a Pokemon at
+// y≈0 would render above the canvas), and the HP bars also sit along the top edge.
+export const ARENA_MARGIN_X = 90;
+export const ARENA_MARGIN_TOP = 190;
+export const ARENA_MARGIN_BOTTOM = 80;
+
 // ─── Cooldown ────────────────────────────────────────────────────────────────
 
 export function computeInitialCooldown(speed: number): number {
@@ -28,6 +36,25 @@ export function distanceBetween(a: BattlePokemon, b: BattlePokemon): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
 
+export function moveTowardPoint(
+  pokemon: BattlePokemon,
+  tx: number,
+  ty: number,
+  speed: number,
+  arenaW: number,
+  arenaH: number
+): void {
+  const dx = tx - pokemon.x;
+  const dy = ty - pokemon.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist === 0) return;
+  const step = computeMovementSpeed(speed);
+  const ratio = Math.min(step / dist, 1);
+  pokemon.x = clamp(pokemon.x + dx * ratio, ARENA_MARGIN_X, arenaW - ARENA_MARGIN_X);
+  pokemon.y = clamp(pokemon.y + dy * ratio, ARENA_MARGIN_TOP, arenaH - ARENA_MARGIN_BOTTOM);
+  pokemon.facingRight = tx >= pokemon.x;
+}
+
 export function moveToward(
   pokemon: BattlePokemon,
   target: BattlePokemon,
@@ -35,13 +62,21 @@ export function moveToward(
   arenaW: number,
   arenaH: number
 ): void {
-  const dist = distanceBetween(pokemon, target);
-  if (dist === 0) return;
-  const step = computeMovementSpeed(speed);
-  const ratio = Math.min(step / dist, 1);
-  pokemon.x = clamp(pokemon.x + (target.x - pokemon.x) * ratio, 0, arenaW);
-  pokemon.y = clamp(pokemon.y + (target.y - pokemon.y) * ratio, 0, arenaH);
-  pokemon.facingRight = target.x >= pokemon.x;
+  moveTowardPoint(pokemon, target.x, target.y, speed, arenaW, arenaH);
+}
+
+/** Random roaming point: a 150–400px hop from the current position, kept inside the arena. */
+export function pickWanderTarget(
+  pokemon: BattlePokemon,
+  arenaW: number,
+  arenaH: number
+): { x: number; y: number } {
+  const angle = Math.random() * 2 * Math.PI;
+  const dist = 150 + Math.random() * 250;
+  return {
+    x: clamp(pokemon.x + Math.cos(angle) * dist, ARENA_MARGIN_X, arenaW - ARENA_MARGIN_X),
+    y: clamp(pokemon.y + Math.sin(angle) * dist, ARENA_MARGIN_TOP, arenaH - ARENA_MARGIN_BOTTOM),
+  };
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -70,23 +105,19 @@ export function findTargets(
   move: MoveData,
   allPokemon: BattlePokemon[]
 ): BattlePokemon[] {
+  if (move.rangeType === "self") return [attacker];
+
   const enemies = allPokemon.filter(
     (p) => p.isAlive && p.pokemonId !== attacker.pokemonId
   );
-
-  if (move.rangeType === "self") return [attacker];
-
-  if (move.rangeType === "aoe") {
-    return enemies.filter((e) => distanceBetween(attacker, e) <= AOE_RANGE);
-  }
-
   const range = getAttackRange(move);
   const inRange = enemies.filter((e) => distanceBetween(attacker, e) <= range);
-  if (inRange.length === 0) return [];
 
-  // Pick nearest target within range
-  inRange.sort((a, b) => distanceBetween(attacker, a) - distanceBetween(attacker, b));
-  return [inRange[0]];
+  // AoE hits everything in the vicinity; single-target picks a RANDOM enemy in range
+  // (not the nearest), so attacks fan out across whoever is close.
+  if (move.rangeType === "aoe") return inRange;
+  if (inRange.length === 0) return [];
+  return [inRange[Math.floor(Math.random() * inRange.length)]];
 }
 
 // ─── Damage calculation ───────────────────────────────────────────────────────
@@ -162,21 +193,14 @@ export function calculateDamage(
 
 export function chooseMove(
   attacker: BattlePokemon,
-  targets: BattlePokemon[],
   allPokemon: BattlePokemon[]
 ): { move: MoveData; targets: BattlePokemon[] } | null {
-  // Filter moves that have valid targets
-  const usableMoves = attacker.moves.filter((move) => {
-    if (move.rangeType === "self") return true;
-    const ts = findTargets(attacker, move, allPokemon);
-    return ts.length > 0;
-  });
+  if (attacker.moves.length === 0) return null;
 
-  if (usableMoves.length === 0) return null;
-
-  const move = usableMoves[Math.floor(Math.random() * usableMoves.length)];
-  const moveTargets = findTargets(attacker, move, allPokemon);
-  return { move, targets: moveTargets };
+  // Pick ANY random move — not filtered by target availability. If nothing is in range
+  // the move whiffs (the caller turns an empty target list into an attack-into-the-air).
+  const move = attacker.moves[Math.floor(Math.random() * attacker.moves.length)];
+  return { move, targets: findTargets(attacker, move, allPokemon) };
 }
 
 // ─── Apply attack ─────────────────────────────────────────────────────────────

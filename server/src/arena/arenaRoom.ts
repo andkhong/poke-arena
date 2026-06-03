@@ -3,20 +3,30 @@ import {
   TICK_RATE_MS,
   ARENA_WIDTH,
   ARENA_HEIGHT,
-  SPAWN_RADIUS,
 } from "@poke-arena/shared";
 import type { BattlePokemon, MoveData } from "@poke-arena/shared";
 import type { ArenaPlayer, ArenaState } from "@poke-arena/shared";
 import type { ArenaActionPayload, ArenaEliminatedPayload, ArenaEndPayload, ArenaTickPayload } from "@poke-arena/shared";
 import {
   computeInitialCooldown,
-  moveToward,
-  canReach,
+  moveTowardPoint,
+  pickWanderTarget,
   chooseMove,
   applyAttack,
   applyStatusDamage,
   canAttack,
+  ARENA_MARGIN_X,
+  ARENA_MARGIN_TOP,
+  ARENA_MARGIN_BOTTOM,
 } from "./arenaEngine";
+
+// Chance per attack to deliberately whiff (use a move with no target) even when an enemy
+// is in range. Out-of-range attacks always whiff regardless.
+const WHIFF_CHANCE = 0.2;
+// Chance per tick to pick a fresh wander destination mid-route (keeps roaming unpredictable).
+const WANDER_REROLL_CHANCE = 0.015;
+// Ticks a Pokemon stops in place to perform its attack animation (~0.5s at 50ms/tick).
+const ATTACK_PAUSE_TICKS = 10;
 
 export type ArenaRoomEvents = {
   tick: [payload: ArenaTickPayload];
@@ -33,6 +43,8 @@ export class ArenaRoom extends EventEmitter {
   private timeLimit: number;
   private placementCounter: number;
   private userIdToSocketId = new Map<string, string>();
+  private wanderTargets = new Map<number, { x: number; y: number }>();
+  private attackPause = new Map<number, number>();
 
   constructor(
     roomId: string,
@@ -97,37 +109,43 @@ export class ArenaRoom extends EventEmitter {
       // Decrement cooldown
       if (pokemon.attackCooldown > 0) pokemon.attackCooldown--;
 
-      // Paralysis speed modifier — effective speed for movement
-      const effectiveSpeed =
-        pokemon.status === "paralysis"
-          ? Math.floor(pokemon.stats.speed / 2)
-          : pokemon.stats.speed;
+      // Tick down the brief pause that follows an attack (stop-in-place to "cast").
+      let pause = this.attackPause.get(pokemon.pokemonId) ?? 0;
+      if (pause > 0) { pause--; this.attackPause.set(pokemon.pokemonId, pause); }
 
-      const nearest = this.nearestEnemy(pokemon, alive);
-      if (!nearest) continue;
-
-      // Move toward nearest enemy if out of range of any available move
-      const maxRange = Math.max(...pokemon.moves.map((m) => {
-        if (m.rangeType === "melee") return 80;
-        if (m.rangeType === "aoe") return 200;
-        if (m.rangeType === "self") return 0;
-        return 220;
-      }));
-
-      const dist = Math.sqrt((pokemon.x - nearest.x) ** 2 + (pokemon.y - nearest.y) ** 2);
-      if (dist > maxRange) {
-        moveToward(pokemon, nearest, effectiveSpeed, ARENA_WIDTH, ARENA_HEIGHT);
-      } else {
-        pokemon.facingRight = nearest.x >= pokemon.x;
+      // Attack when off cooldown and not mid-animation: a random move aimed at a random
+      // enemy in range — or a whiff (no target) if nothing is in range or it swings at air.
+      if (pause <= 0 && pokemon.attackCooldown <= 0 && canAttack(pokemon)) {
+        const choice = chooseMove(pokemon, alive);
+        if (choice) {
+          const { move, targets } = choice;
+          const forceWhiff = move.rangeType !== "self" && Math.random() < WHIFF_CHANCE;
+          if (targets.length === 0 || forceWhiff) {
+            this.executeWhiff(pokemon, move);
+          } else {
+            this.executeMove(pokemon, move, targets, alive);
+          }
+          pokemon.attackCooldown = computeInitialCooldown(pokemon.stats.speed);
+          // Freeze in place so the attack animation plays before it roams again.
+          pause = ATTACK_PAUSE_TICKS;
+          this.attackPause.set(pokemon.pokemonId, pause);
+        }
       }
 
-      // Attack if cooldown ready
-      if (pokemon.attackCooldown <= 0 && canAttack(pokemon)) {
-        const choice = chooseMove(pokemon, alive.filter((p) => p.pokemonId !== pokemon.pokemonId), alive);
-        if (choice) {
-          this.executeMove(pokemon, choice.move, choice.targets, alive);
-          pokemon.attackCooldown = computeInitialCooldown(pokemon.stats.speed);
+      // Move only when not mid-attack — the Pokemon stops in place to perform its move.
+      if (pause <= 0) {
+        const effectiveSpeed =
+          pokemon.status === "paralysis"
+            ? Math.floor(pokemon.stats.speed / 2)
+            : pokemon.stats.speed;
+
+        let dest = this.wanderTargets.get(pokemon.pokemonId);
+        const arrived = dest != null && Math.hypot(dest.x - pokemon.x, dest.y - pokemon.y) < 40;
+        if (dest == null || arrived || Math.random() < WANDER_REROLL_CHANCE) {
+          dest = pickWanderTarget(pokemon, ARENA_WIDTH, ARENA_HEIGHT);
+          this.wanderTargets.set(pokemon.pokemonId, dest);
         }
+        moveTowardPoint(pokemon, dest.x, dest.y, effectiveSpeed, ARENA_WIDTH, ARENA_HEIGHT);
       }
     }
 
@@ -162,12 +180,38 @@ export class ArenaRoom extends EventEmitter {
     }
   }
 
+  private executeWhiff(attacker: BattlePokemon, move: MoveData): void {
+    // Used a move but hit nothing — broadcast so the client shows the banner + an attack
+    // thrown into the air. targetPokemonId -1 marks "no target"; missed:false lets the
+    // visual effect still fire (it's a whiff, not an accuracy miss).
+    this.emit("action", {
+      attackerPokemonId: attacker.pokemonId,
+      targetPokemonId: -1,
+      moveName: move.name,
+      moveDisplayName: move.displayName,
+      moveType: move.type,
+      damageClass: move.damageClass,
+      damageDealt: 0,
+      effectiveness: 1,
+      isCrit: false,
+      missed: false,
+      statusApplied: null,
+      isAoe: move.rangeType === "aoe",
+      statChanges: [],
+      hpDrained: 0,
+    } as ArenaActionPayload);
+  }
+
   private executeMove(
     attacker: BattlePokemon,
     move: MoveData,
     targets: BattlePokemon[],
     _alive: BattlePokemon[]
   ): void {
+    // Face the Pokemon it's striking (cosmetic; damage is position-independent)
+    if (targets.length > 0 && targets[0].pokemonId !== attacker.pokemonId) {
+      attacker.facingRight = targets[0].x >= attacker.x;
+    }
     for (const target of targets) {
       const result = applyAttack(attacker, target, move);
 
@@ -209,16 +253,6 @@ export class ArenaRoom extends EventEmitter {
         username: player?.username ?? "Unknown",
       } as ArenaEliminatedPayload);
     }
-  }
-
-  private nearestEnemy(pokemon: BattlePokemon, alive: BattlePokemon[]): BattlePokemon | null {
-    const enemies = alive.filter((p) => p.pokemonId !== pokemon.pokemonId);
-    if (enemies.length === 0) return null;
-    return enemies.reduce((nearest, p) => {
-      const da = Math.sqrt((p.x - pokemon.x) ** 2 + (p.y - pokemon.y) ** 2);
-      const db = Math.sqrt((nearest.x - pokemon.x) ** 2 + (nearest.y - pokemon.y) ** 2);
-      return da < db ? p : nearest;
-    });
   }
 
   private endArena(reason: "lastalive" | "timeout" | "alldisconnected"): void {
@@ -263,18 +297,20 @@ export class ArenaRoom extends EventEmitter {
 // ─── Spawn positions ─────────────────────────────────────────────────────────
 
 export function generateSpawnPositions(count: number): Array<{ x: number; y: number }> {
-  const cx = ARENA_WIDTH / 2;
-  const cy = ARENA_HEIGHT / 2;
-  // For 1v1 use a tighter radius so Pokemon close in ~5-8 seconds even at low speed.
-  // For larger fights the standard radius keeps adjacent players outside attack range.
-  const radius = count <= 2 ? 160 : SPAWN_RADIUS;
-  const jitterAmp = count <= 2 ? 30 : 80;
+  const minX = ARENA_MARGIN_X, maxX = ARENA_WIDTH - ARENA_MARGIN_X;
+  const minY = ARENA_MARGIN_TOP, maxY = ARENA_HEIGHT - ARENA_MARGIN_BOTTOM;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  // Spawn on a ring sized to fit inside the playable region (tighter for 1v1 so they meet).
+  const fill = count <= 2 ? 0.42 : 0.82;
+  const rx = ((maxX - minX) / 2) * fill;
+  const ry = ((maxY - minY) / 2) * fill;
   return Array.from({ length: count }, (_, i) => {
-    const angle = (i / count) * 2 * Math.PI;
-    const jitter = (Math.random() - 0.5) * jitterAmp;
+    const angle = (i / count) * 2 * Math.PI - Math.PI / 2;
+    const jr = 1 + (Math.random() - 0.5) * 0.16;
     return {
-      x: Math.round(cx + (radius + jitter) * Math.cos(angle)),
-      y: Math.round(cy + (radius + jitter) * Math.sin(angle)),
+      x: Math.round(Math.max(minX, Math.min(maxX, cx + rx * jr * Math.cos(angle)))),
+      y: Math.round(Math.max(minY, Math.min(maxY, cy + ry * jr * Math.sin(angle)))),
     };
   });
 }

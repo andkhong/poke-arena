@@ -1,7 +1,7 @@
 import * as PIXI from "pixi.js";
 
-const SPRITE_SCALE = 2.5;
-const FALLBACK_SIZE = 40;
+const SPRITE_SCALE = 1.5;
+const FALLBACK_SIZE = 32;
 
 export class PokemonSprite {
   private container: PIXI.Container;
@@ -82,6 +82,29 @@ export class PokemonSprite {
   setPosition(x: number, y: number, logicalW: number, logicalH: number, canvasW: number, canvasH: number): void {
     this.container.x = (x / logicalW) * canvasW;
     this.container.y = (y / logicalH) * canvasH;
+  }
+
+  /** Hide the sprite before its summon (scale 0 keeps it invisible regardless of HP/alpha resets). */
+  hideForSummon(): void {
+    this.container.scale.set(0);
+    this.container.alpha = 0;
+  }
+
+  /** Pop the sprite out of its pokeball with a slight overshoot. */
+  popIn(): void {
+    this.container.alpha = 1;
+    const start = Date.now();
+    const dur = 380;
+    const step = () => {
+      if (this.isDestroyed) return;
+      const t = Math.min((Date.now() - start) / dur, 1);
+      // 0 → 1.15 → 1 overshoot
+      const s = t < 0.7 ? (t / 0.7) * 1.15 : 1.15 - ((t - 0.7) / 0.3) * 0.15;
+      this.container.scale.set(s);
+      if (t < 1) requestAnimationFrame(step);
+      else this.container.scale.set(1);
+    };
+    requestAnimationFrame(step);
   }
 
   updateHP(hp: number): void {

@@ -40,6 +40,25 @@ export async function getRandomCachedPokemon() {
   return JSON.parse(raw) as Omit<Awaited<ReturnType<typeof db.pokemon.findUniqueOrThrow>>, "moves">;
 }
 
+/** Returns up to `count` DISTINCT random cached Pokemon, skipping any id in `excludeIds`.
+ *  Used to fill an arena with unique species (the battle keys everything by species id,
+ *  so duplicates would collide). */
+export async function getRandomCachedPokemonMany(count: number, excludeIds: number[] = []) {
+  if (count <= 0) return [];
+  const exclude = new Set(excludeIds.map(String));
+  // SRANDMEMBER with a positive count returns DISTINCT members; over-fetch so we still
+  // have enough candidates after dropping excluded ids.
+  const idStrs = await redis.srandmember(IDS_KEY, count + exclude.size + 4);
+  const result: Array<Omit<Awaited<ReturnType<typeof db.pokemon.findUniqueOrThrow>>, "moves">> = [];
+  for (const idStr of idStrs) {
+    if (exclude.has(idStr)) continue;
+    const raw = await redis.get(pokemonKey(parseInt(idStr)));
+    if (raw) result.push(JSON.parse(raw));
+    if (result.length >= count) break;
+  }
+  return result;
+}
+
 export async function getCachedPokemonById(id: number) {
   const raw = await redis.get(pokemonKey(id));
   if (raw) return JSON.parse(raw) as Omit<Awaited<ReturnType<typeof db.pokemon.findUniqueOrThrow>>, "moves">;
