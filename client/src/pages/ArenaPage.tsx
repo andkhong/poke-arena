@@ -4,6 +4,7 @@ import { ArenaCanvas } from "../components/arena/ArenaCanvas";
 import { ArenaHUD } from "../components/arena/ArenaHUD";
 import { MatchmakingModal } from "../components/arena/MatchmakingModal";
 import { ArenaResultModal } from "../components/arena/ArenaResultModal";
+import { BattleLog } from "../components/arena/BattleLog";
 import { useMatchmakingStore } from "../store/matchmakingStore";
 import { useArenaStore } from "../store/arenaStore";
 import { getSocket } from "../socket";
@@ -53,8 +54,9 @@ function BattleCountdown({ startsAt }: { startsAt: number }) {
 export function ArenaPage() {
   const navigate = useNavigate();
   const { status, setIdle, isBotMatch, setMatched, selectedPokemonId } = useMatchmakingStore();
-  const { result, setMatchStart, startsAt, tick } = useArenaStore();
-  const hasFiredRef = useRef(false);
+  const { result, setMatchStart, startsAt, tick, battleLog } = useArenaStore();
+  // Persists across React StrictMode double-invoke so queue:join is only emitted once per mount.
+  const botEmittedRef = useRef(false);
 
   useEffect(() => {
     const socket = getSocket();
@@ -69,17 +71,42 @@ export function ArenaPage() {
     return () => { socket.off("queue:start", onQueueStart); };
   }, [setMatchStart, setMatched]);
 
-  // Bot-match retry: re-emit queue:join if still queuing after 5s
+  // Bot-match: emit queue:join as soon as socket is connected. No arbitrary delay —
+  // if the socket isn't up yet we listen for the connect event. Fall back to /select
+  // after 10s so the user is never stuck on "preparing" forever.
   useEffect(() => {
-    if (status !== "queuing" || !isBotMatch || hasFiredRef.current) return;
-    const timer = setTimeout(() => {
-      const socket = getSocket();
-      if (!selectedPokemonId) return;
-      hasFiredRef.current = true;
+    if (status !== "queuing" || !isBotMatch || !selectedPokemonId) return;
+
+    const socket = getSocket();
+
+    function fireEmit() {
+      if (botEmittedRef.current) return;
+      botEmittedRef.current = true;
+      socket.off("connect", fireEmit);
+      console.log("[bot] emitting queue:join pokemonId=", selectedPokemonId, "socketId=", socket.id);
       socket.emit("queue:join", { pokemonId: selectedPokemonId, botMatch: true });
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [status, isBotMatch, selectedPokemonId]);
+    }
+
+    if (socket.connected) {
+      fireEmit();
+    } else {
+      socket.on("connect", fireEmit);
+    }
+
+    const giveUp = setTimeout(() => {
+      if (!botEmittedRef.current) {
+        socket.off("connect", fireEmit);
+        console.warn("[bot] socket never connected — returning to select");
+        setIdle();
+        navigate("/select");
+      }
+    }, 10_000);
+
+    return () => {
+      clearTimeout(giveUp);
+      socket.off("connect", fireEmit);
+    };
+  }, [status, isBotMatch, selectedPokemonId, setIdle, navigate]);
 
   function handleCancelQueue() {
     getSocket().emit("queue:leave");
@@ -88,6 +115,8 @@ export function ArenaPage() {
   }
 
   const showCountdown = status === "matched" && tick === 0 && startsAt > Date.now();
+
+  const showBattleLog = status === "matched" || (result != null && battleLog.length > 0);
 
   return (
     <div className="relative w-full h-[calc(100vh-56px)]" style={{ background: "#c4a870" }}>
@@ -102,6 +131,9 @@ export function ArenaPage() {
       {status === "queuing" && (
         <MatchmakingModal onCancel={handleCancelQueue} isBotMatch={isBotMatch} />
       )}
+
+      {/* BattleLog persists through result modal so user can review */}
+      {showBattleLog && <BattleLog />}
 
       {result && <ArenaResultModal />}
     </div>

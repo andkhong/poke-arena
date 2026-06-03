@@ -5,6 +5,7 @@ import { db } from "../db";
 import { config } from "../config";
 import { createRoom, destroyRoom } from "../arena/arenaManager";
 import { getRandomMoves } from "../pokemon/service";
+import { getCachedPokemonById, getRandomCachedPokemon } from "../cache/pokemonCache";
 import { updateLeaderboard } from "../leaderboard/service";
 
 const QUEUE_KEY = "pa:queue";
@@ -20,15 +21,14 @@ interface QueueEntry {
 const queueTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 async function buildHumanPlayer(entry: QueueEntry) {
-  const pokemon = await db.pokemon.findUnique({ where: { id: entry.pokemonId } });
+  const pokemon = await getCachedPokemonById(entry.pokemonId);
   const moves = await getRandomMoves(entry.pokemonId, 4);
   return { ...entry, pokemonData: pokemon!, moves, isAI: false };
 }
 
 async function buildAIPlayer(index: number) {
-  const count = await db.pokemon.count();
-  const skip = Math.floor(Math.random() * count);
-  const [pokemon] = await db.pokemon.findMany({ skip, take: 1 });
+  const pokemon = await getRandomCachedPokemon();
+  if (!pokemon) throw new Error("No Pokemon found in cache — cache may not be warmed yet");
   const moves = await getRandomMoves(pokemon.id, 4);
   return {
     socketId: `ai-${index}-${Date.now()}`,

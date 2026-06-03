@@ -56,21 +56,8 @@ export function PokemonSelectPage() {
   function handleBotMatch() {
     if (!selectedId) return;
     if (token) connectSocket(token);
-    const socket = getSocket();
     setBotQueuing(selectedId);
     navigate("/arena");
-
-    const pokemonId = selectedId;
-    function doEmit() {
-      console.log("[bot] emitting queue:join id=", socket.id, "pokemonId=", pokemonId);
-      socket.emit("queue:join", { pokemonId, botMatch: true });
-    }
-
-    if (socket.connected) {
-      doEmit();
-    } else {
-      socket.once("connect", doEmit);
-    }
   }
 
   const totalPages = data ? Math.ceil(data.total / 30) : 1;

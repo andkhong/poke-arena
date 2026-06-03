@@ -9,6 +9,7 @@ export class PokemonSprite {
   private placeholder: PIXI.Graphics | null = null;
   private isShaking = false;
   private isLunging = false;
+  private isDestroyed = false;
   pokemonId: number;
 
   constructor(pokemonId: number, spriteUrl: string, _maxHp: number, _displayName: string, _isMe: boolean) {
@@ -45,6 +46,7 @@ export class PokemonSprite {
     const loadUrl = PokemonSprite.toPngUrl(url);
     try {
       const asset = await PIXI.Assets.load(loadUrl);
+      if (this.isDestroyed) return; // sprite was destroyed while loading
 
       let sprite: PIXI.Sprite | PIXI.AnimatedSprite;
       if (asset?.textures) {
@@ -65,8 +67,8 @@ export class PokemonSprite {
       }
       this.container.addChild(sprite);
     } catch (err) {
+      if (this.isDestroyed) return;
       console.error("[PokemonSprite] Failed to load:", loadUrl, err);
-      // Recolor placeholder to a neutral grey box
       if (this.placeholder) {
         this.placeholder.clear()
           .rect(-FALLBACK_SIZE / 2, -FALLBACK_SIZE, FALLBACK_SIZE, FALLBACK_SIZE)
@@ -149,6 +151,7 @@ export class PokemonSprite {
   }
 
   destroy(): void {
+    this.isDestroyed = true;
     this.container.destroy({ children: true });
   }
 }

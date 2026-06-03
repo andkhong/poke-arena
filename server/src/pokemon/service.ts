@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { getCachedMoves } from "../cache/pokemonCache";
 import type { PokemonSummary } from "@poke-arena/shared";
 
 interface PokemonListOptions {
@@ -71,32 +72,21 @@ export async function getPokemonById(id: number): Promise<PokemonSummary | null>
 }
 
 export async function getRandomMoves(pokemonId: number, count: number) {
-  const all = await db.pokemonMove.findMany({
-    where: { pokemonId, move: { damageClass: { not: "status" }, power: { not: null } } },
-    include: { move: true },
-  });
+  const allMoves = await getCachedMoves(pokemonId);
 
-  const status = await db.pokemonMove.findMany({
-    where: { pokemonId, move: { damageClass: "status" } },
-    include: { move: true },
-    take: 5,
-  });
+  const damaging = allMoves.filter((m) => m.damageClass !== "status" && m.power != null);
+  const status = allMoves.filter((m) => m.damageClass === "status");
 
-  const damaging = all.sort(() => Math.random() - 0.5).slice(0, count - 1);
+  const damagingPick = damaging.sort(() => Math.random() - 0.5).slice(0, count - 1);
   const statusPick = status.sort(() => Math.random() - 0.5).slice(0, 1);
 
-  const combined = [...damaging, ...statusPick]
+  const combined = [...damagingPick, ...statusPick]
     .sort(() => Math.random() - 0.5)
     .slice(0, count);
 
   if (combined.length < count) {
-    const fallback = await db.pokemonMove.findMany({
-      where: { pokemonId },
-      include: { move: true },
-      take: count,
-    });
-    return fallback.slice(0, count).map((pm) => pm.move);
+    return allMoves.sort(() => Math.random() - 0.5).slice(0, count);
   }
 
-  return combined.map((pm) => pm.move);
+  return combined;
 }

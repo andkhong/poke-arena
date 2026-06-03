@@ -58,3 +58,18 @@ body {
 .animate-shake       { animation: shake 0.4s ease-out; }
 .animate-fade-in     { animation: fade-in 0.3s ease-out; }
 .animate-float-up    { animation: float-up 0.8s ease-out forwards; }
+
+/* Move name banner — slides in from attacker side, holds, fades out */
+@keyframes move-banner-right {
+  0%   { opacity: 0; transform: translateX(-22px); }
+  14%  { opacity: 1; transform: translateX(0); }
+  68%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(8px); }
+}
+
+@keyframes move-banner-left {
+  0%   { opacity: 0; transform: translateX(22px); }
+  14%  { opacity: 1; transform: translateX(0); }
+  68%  { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-8px); }
+}

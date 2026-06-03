@@ -61,6 +61,8 @@ export interface ArenaActionPayload {
   missed: boolean;
   statusApplied: string | null;
   isAoe: boolean;
+  statChanges: Array<{ stat: string; change: number }>;
+  hpDrained: number;
 }
 
 export interface ArenaEliminatedPayload {

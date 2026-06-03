@@ -17,7 +17,7 @@ export class ArenaRenderer {
     this.background = new ArenaBackground(app.canvas.width, app.canvas.height);
     this.moveEffect = new MoveEffect();
     this.app.stage.addChild(this.background.getContainer());
-    this.app.stage.addChild(this.moveEffect.getContainer());
+    // sprites added in initPlayers, then moveEffect on top
   }
 
   initPlayers(players: ArenaPlayerInfo[], arenaW: number, arenaH: number): void {
@@ -69,6 +69,8 @@ export class ArenaRenderer {
       this.sprites.set(p.pokemon.pokemonId, s);
       this.app.stage.addChild(s.getContainer());
     }
+    // Keep moveEffect on top of all sprites
+    this.app.stage.addChild(this.moveEffect.getContainer());
     console.log("[ArenaRenderer] stage children count=", this.app.stage.children.length);
   }
 
@@ -97,9 +99,6 @@ export class ArenaRenderer {
       const ay = attacker.getContainer().y;
       const tx = target.getContainer().x;
       const ty = target.getContainer().y;
-
-      // Move name floats above attacker
-      this.moveEffect.showMoveName(ax, ay, action.moveDisplayName, action.moveType);
 
       // Physical moves lunge, special/status moves don't
       if (action.damageClass === "physical") {

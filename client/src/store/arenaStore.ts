@@ -23,6 +23,24 @@ export interface EliminationEvent {
   timestamp: number;
 }
 
+export interface BattleLogEntry {
+  id: number;
+  attackerName: string;
+  targetName: string;
+  moveDisplayName: string;
+  moveType: string;
+  damageClass: string;
+  damageDealt: number;
+  effectiveness: number;
+  isCrit: boolean;
+  missed: boolean;
+  isAoe: boolean;
+  statusApplied: string | null;
+  statChanges: Array<{ stat: string; change: number }>;
+  hpDrained: number;
+  timestamp: number;
+}
+
 export interface PendingAction {
   attackerPokemonId: number;
   targetPokemonId: number;
@@ -45,8 +63,10 @@ interface ArenaState {
   tick: number;
   timeRemaining: number;
   eliminations: EliminationEvent[];
+  battleLog: BattleLogEntry[];
   result: ArenaEndPayload | null;
   pendingActions: PendingAction[];
+  _logSeq: number;
 
   setMatchStart: (payload: MatchStartPayload) => void;
   applyTick: (payload: ArenaTickPayload) => void;
@@ -66,8 +86,10 @@ const initialState = {
   tick: 0,
   timeRemaining: 180000,
   eliminations: [] as EliminationEvent[],
+  battleLog: [] as BattleLogEntry[],
   result: null,
   pendingActions: [] as PendingAction[],
+  _logSeq: 0,
 };
 
 export const useArenaStore = create<ArenaState>((set) => ({
@@ -83,8 +105,10 @@ export const useArenaStore = create<ArenaState>((set) => ({
       timeRemaining: payload.timeLimit,
       tick: 0,
       eliminations: [],
+      battleLog: [],
       result: null,
       pendingActions: [],
+      _logSeq: 0,
     }),
 
   applyTick: (payload) =>
@@ -109,23 +133,47 @@ export const useArenaStore = create<ArenaState>((set) => ({
     }),
 
   addAction: (payload) =>
-    set((state) => ({
-      pendingActions: [
-        ...state.pendingActions,
-        {
-          attackerPokemonId: payload.attackerPokemonId,
-          targetPokemonId: payload.targetPokemonId,
-          moveDisplayName: payload.moveDisplayName,
-          moveType: payload.moveType,
-          damageClass: payload.damageClass,
-          isAoe: payload.isAoe,
-          effectiveness: payload.effectiveness,
-          isCrit: payload.isCrit,
-          damageDealt: payload.damageDealt,
-          missed: payload.missed,
-        },
-      ],
-    })),
+    set((state) => {
+      const attacker = state.players.find((p) => p.pokemon.pokemonId === payload.attackerPokemonId);
+      const target = state.players.find((p) => p.pokemon.pokemonId === payload.targetPokemonId);
+      const seq = state._logSeq + 1;
+      const logEntry: BattleLogEntry = {
+        id: seq,
+        attackerName: attacker?.pokemon.displayName ?? `#${payload.attackerPokemonId}`,
+        targetName: target?.pokemon.displayName ?? (payload.isAoe ? "All" : `#${payload.targetPokemonId}`),
+        moveDisplayName: payload.moveDisplayName,
+        moveType: payload.moveType,
+        damageClass: payload.damageClass,
+        damageDealt: payload.damageDealt,
+        effectiveness: payload.effectiveness,
+        isCrit: payload.isCrit,
+        missed: payload.missed,
+        isAoe: payload.isAoe,
+        statusApplied: payload.statusApplied,
+        statChanges: payload.statChanges ?? [],
+        hpDrained: payload.hpDrained ?? 0,
+        timestamp: Date.now(),
+      };
+      return {
+        _logSeq: seq,
+        battleLog: [logEntry, ...state.battleLog].slice(0, 200),
+        pendingActions: [
+          ...state.pendingActions,
+          {
+            attackerPokemonId: payload.attackerPokemonId,
+            targetPokemonId: payload.targetPokemonId,
+            moveDisplayName: payload.moveDisplayName,
+            moveType: payload.moveType,
+            damageClass: payload.damageClass,
+            isAoe: payload.isAoe,
+            effectiveness: payload.effectiveness,
+            isCrit: payload.isCrit,
+            damageDealt: payload.damageDealt,
+            missed: payload.missed,
+          },
+        ],
+      };
+    }),
 
   clearPendingActions: () => set({ pendingActions: [] }),
 

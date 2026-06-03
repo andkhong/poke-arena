@@ -8,6 +8,7 @@ import { maybeRunSeeder } from "./seed/seeder";
 import { authRouter } from "./auth/router";
 import { pokemonRouter } from "./pokemon/router";
 import { leaderboardRouter } from "./leaderboard/router";
+import { warmPokemonCache } from "./cache/pokemonCache";
 
 const corsOrigins = config.CORS_ORIGIN.split(",").map((s) => s.trim());
 
@@ -32,5 +33,7 @@ attachSocketServer(httpServer);
 
 httpServer.listen(config.PORT, () => {
   console.log(`[Server] Listening on port ${config.PORT}`);
-  maybeRunSeeder().catch(console.error);
+  maybeRunSeeder()
+    .then(() => warmPokemonCache())
+    .catch(console.error);
 });

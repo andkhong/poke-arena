@@ -184,6 +184,8 @@ export class ArenaRoom extends EventEmitter {
         missed: result.missed,
         statusApplied: result.statusApplied,
         isAoe: result.isAoe,
+        statChanges: result.statChanges,
+        hpDrained: result.hpDrained,
       } as ArenaActionPayload);
 
       this.checkElimination(target);

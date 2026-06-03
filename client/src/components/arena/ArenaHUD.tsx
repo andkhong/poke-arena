@@ -3,50 +3,205 @@ import { useAuthStore } from "../../store/authStore";
 import type { ArenaPlayerInfo } from "../../store/arenaStore";
 
 function hpColor(pct: number): string {
-  if (pct > 0.5) return "#22dd22";
-  if (pct > 0.25) return "#ddaa00";
-  return "#dd2200";
+  if (pct > 0.5) return "#52c441";
+  if (pct > 0.25) return "#f0a000";
+  return "#e83030";
 }
 
-function PlayerEntry({ p, side }: { p: ArenaPlayerInfo; side: "left" | "right" }) {
+const STATUS_LABELS: Record<string, { label: string; bg: string; color: string }> = {
+  burn:      { label: "BRN", bg: "#c84820", color: "#fff" },
+  paralysis: { label: "PAR", bg: "#b89000", color: "#fff" },
+  poison:    { label: "PSN", bg: "#8840a8", color: "#fff" },
+  sleep:     { label: "SLP", bg: "#607898", color: "#fff" },
+  freeze:    { label: "FRZ", bg: "#50a0c0", color: "#fff" },
+};
+
+function PlayerEntry({ p }: { p: ArenaPlayerInfo }) {
   const pct = p.pokemon.maxHp > 0 ? p.pokemon.currentHp / p.pokemon.maxHp : 0;
   const alive = p.pokemon.isAlive;
-
-  const clip =
-    side === "left"
-      ? "polygon(0 0, calc(100% - 13px) 0, 100% 50%, calc(100% - 13px) 100%, 0 100%)"
-      : "polygon(13px 0, 100% 0, 100% 100%, 13px 100%, 0 50%)";
+  const statusInfo = p.pokemon.status ? STATUS_LABELS[p.pokemon.status] : null;
+  const fill = alive ? hpColor(pct) : "#aaaaaa";
 
   return (
     <div
-      className="flex flex-col gap-0.5 px-2 pt-1.5 pb-1.5"
-      style={{
-        background: "rgba(8, 8, 12, 0.88)",
-        clipPath: clip,
-        paddingRight: side === "left" ? "22px" : "8px",
-        paddingLeft: side === "right" ? "22px" : "8px",
-        opacity: alive ? 1 : 0.42,
-        minWidth: 160,
-      }}
+      className="flex items-center gap-1"
+      style={{ opacity: alive ? 1 : 0.45 }}
     >
-      <span
-        className="text-[11px] font-bold tracking-wider truncate"
-        style={{ fontFamily: "monospace", color: alive ? "#ffffff" : "#888888" }}
-      >
-        {p.pokemon.displayName.toUpperCase()}
-      </span>
+      {/* Black left-pointing triangle */}
       <div
-        className="rounded-sm overflow-hidden"
-        style={{ height: 8, background: "#333333", width: "100%" }}
+        style={{
+          width: 0,
+          height: 0,
+          borderTop: "6px solid transparent",
+          borderBottom: "6px solid transparent",
+          borderRight: "9px solid #111111",
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Name + HP bar card */}
+      <div
+        style={{
+          background: "rgba(240,232,200,0.94)",
+          border: "1.5px solid #888",
+          borderRadius: 3,
+          padding: "3px 8px 4px 6px",
+          minWidth: 148,
+          maxWidth: 172,
+        }}
       >
+        {/* Name row */}
+        <div className="flex items-center gap-1 mb-1">
+          <span
+            style={{
+              fontFamily: "monospace",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+              color: "#111",
+              lineHeight: 1,
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {p.pokemon.displayName.toUpperCase()}
+          </span>
+          {statusInfo && (
+            <span
+              style={{
+                fontSize: 8,
+                fontFamily: "monospace",
+                fontWeight: 700,
+                background: statusInfo.bg,
+                color: statusInfo.color,
+                borderRadius: 2,
+                padding: "1px 3px",
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              {statusInfo.label}
+            </span>
+          )}
+        </div>
+
+        {/* HP bar */}
         <div
           style={{
-            height: "100%",
-            width: `${Math.max(0, pct * 100).toFixed(1)}%`,
-            background: alive ? hpColor(pct) : "#555555",
-            transition: "width 0.15s ease-out, background 0.3s",
+            height: 7,
+            background: "#e0e0e0",
+            border: "1px solid #999",
+            borderRadius: 2,
+            overflow: "hidden",
           }}
-        />
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${Math.max(0, pct * 100).toFixed(1)}%`,
+              background: fill,
+              transition: "width 0.15s ease-out, background 0.3s",
+            }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RightPlayerEntry({ p }: { p: ArenaPlayerInfo }) {
+  const pct = p.pokemon.maxHp > 0 ? p.pokemon.currentHp / p.pokemon.maxHp : 0;
+  const alive = p.pokemon.isAlive;
+  const statusInfo = p.pokemon.status ? STATUS_LABELS[p.pokemon.status] : null;
+  const fill = alive ? hpColor(pct) : "#aaaaaa";
+
+  return (
+    <div
+      className="flex items-center gap-1"
+      style={{ opacity: alive ? 1 : 0.45, flexDirection: "row-reverse" }}
+    >
+      {/* Black right-pointing triangle */}
+      <div
+        style={{
+          width: 0,
+          height: 0,
+          borderTop: "6px solid transparent",
+          borderBottom: "6px solid transparent",
+          borderLeft: "9px solid #111111",
+          flexShrink: 0,
+        }}
+      />
+
+      {/* Name + HP bar card */}
+      <div
+        style={{
+          background: "rgba(240,232,200,0.94)",
+          border: "1.5px solid #888",
+          borderRadius: 3,
+          padding: "3px 6px 4px 8px",
+          minWidth: 148,
+          maxWidth: 172,
+        }}
+      >
+        {/* Name row */}
+        <div className="flex items-center gap-1 mb-1" style={{ flexDirection: "row-reverse" }}>
+          <span
+            style={{
+              fontFamily: "monospace",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: "0.06em",
+              color: "#111",
+              lineHeight: 1,
+              flex: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              textAlign: "right",
+            }}
+          >
+            {p.pokemon.displayName.toUpperCase()}
+          </span>
+          {statusInfo && (
+            <span
+              style={{
+                fontSize: 8,
+                fontFamily: "monospace",
+                fontWeight: 700,
+                background: statusInfo.bg,
+                color: statusInfo.color,
+                borderRadius: 2,
+                padding: "1px 3px",
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              {statusInfo.label}
+            </span>
+          )}
+        </div>
+
+        {/* HP bar */}
+        <div
+          style={{
+            height: 7,
+            background: "#e0e0e0",
+            border: "1px solid #999",
+            borderRadius: 2,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${Math.max(0, pct * 100).toFixed(1)}%`,
+              background: fill,
+              transition: "width 0.15s ease-out, background 0.3s",
+            }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -62,7 +217,6 @@ export function ArenaHUD() {
   const { players, timeRemaining, eliminations } = useArenaStore();
   const { user } = useAuthStore();
 
-  // Split players into left/right by spawn x position
   const sorted = [...players].sort((a, b) => a.pokemon.x - b.pokemon.x);
   const half = Math.ceil(sorted.length / 2);
   const leftPlayers = sorted.slice(0, half);
@@ -70,24 +224,26 @@ export function ArenaHUD() {
 
   const alive = players.filter((p) => p.pokemon.isAlive).length;
   const me = players.find((p) => p.userId === user?.id);
+  const mePct = me ? me.pokemon.currentHp / me.pokemon.maxHp : 0;
+  const meStatus = me?.pokemon.status ? STATUS_LABELS[me.pokemon.status] : null;
   const timeColor =
-    timeRemaining > 60000 ? "#22dd22" :
+    timeRemaining > 60000 ? "#22cc22" :
     timeRemaining > 30000 ? "#ddaa00" : "#ff3322";
 
   return (
     <div className="absolute inset-0 pointer-events-none z-10">
 
       {/* Left sidebar */}
-      <div className="absolute top-0 left-0 flex flex-col gap-1 pt-2">
+      <div className="absolute top-0 left-0 flex flex-col gap-1.5 pt-2 pl-1">
         {leftPlayers.map((p) => (
-          <PlayerEntry key={p.pokemon.pokemonId} p={p} side="left" />
+          <PlayerEntry key={p.pokemon.pokemonId} p={p} />
         ))}
       </div>
 
-      {/* Right sidebar */}
-      <div className="absolute top-0 right-0 flex flex-col items-end gap-1 pt-2">
+      {/* Right sidebar — flip the triangle to point right */}
+      <div className="absolute top-0 right-0 flex flex-col gap-1.5 pt-2 pr-1" style={{ alignItems: "flex-end" }}>
         {rightPlayers.map((p) => (
-          <PlayerEntry key={p.pokemon.pokemonId} p={p} side="right" />
+          <RightPlayerEntry key={p.pokemon.pokemonId} p={p} />
         ))}
       </div>
 
@@ -95,39 +251,71 @@ export function ArenaHUD() {
       <div className="absolute top-2 left-1/2 -translate-x-1/2 flex flex-col items-center gap-0.5">
         <div
           className="text-3xl font-black font-mono"
-          style={{ color: timeColor, textShadow: "0 0 8px rgba(0,0,0,0.7)" }}
+          style={{ color: timeColor, textShadow: "0 2px 6px rgba(0,0,0,0.55)" }}
         >
           {formatTime(timeRemaining)}
         </div>
-        <div className="text-[11px] font-bold tracking-widest" style={{ color: "#ddcc88", fontFamily: "monospace" }}>
+        <div
+          className="text-[10px] font-bold tracking-widest font-mono"
+          style={{
+            background: "rgba(240,232,200,0.88)",
+            border: "1.5px solid #888",
+            borderRadius: 3,
+            padding: "1px 8px",
+            color: "#333",
+          }}
+        >
           {alive} / {players.length} REMAINING
         </div>
       </div>
 
-      {/* My Pokemon quick info — bottom center */}
+      {/* My Pokemon quick info — DS-style bottom panel */}
       {me && me.pokemon.isAlive && (
         <div
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-1.5 flex items-center gap-3"
-          style={{ background: "rgba(8,8,12,0.82)", border: "1px solid #444" }}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1"
         >
-          <span className="text-yellow-300 text-xs font-bold font-mono tracking-wider">
-            {me.pokemon.displayName.toUpperCase()}
-          </span>
-          <div className="flex items-center gap-1.5">
-            <div style={{ height: 8, width: 100, background: "#333", borderRadius: 2 }}>
+          <div
+            style={{
+              width: 0,
+              height: 0,
+              borderTop: "6px solid transparent",
+              borderBottom: "6px solid transparent",
+              borderRight: "9px solid #111",
+              flexShrink: 0,
+            }}
+          />
+          <div
+            style={{
+              background: "rgba(240,232,200,0.96)",
+              border: "1.5px solid #888",
+              borderRadius: 3,
+              padding: "4px 12px 5px 8px",
+              minWidth: 180,
+            }}
+          >
+            <div className="flex items-center gap-1 mb-1">
+              <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", color: "#111", flex: 1 }}>
+                {me.pokemon.displayName.toUpperCase()}
+              </span>
+              {meStatus && (
+                <span style={{ fontSize: 8, fontFamily: "monospace", fontWeight: 700, background: meStatus.bg, color: meStatus.color, borderRadius: 2, padding: "1px 3px", lineHeight: 1 }}>
+                  {meStatus.label}
+                </span>
+              )}
+              <span style={{ fontSize: 9, fontFamily: "monospace", color: "#555", marginLeft: 4 }}>
+                {me.pokemon.currentHp}/{me.pokemon.maxHp}
+              </span>
+            </div>
+            <div style={{ height: 7, background: "#e0e0e0", border: "1px solid #999", borderRadius: 2, overflow: "hidden" }}>
               <div
                 style={{
                   height: "100%",
-                  width: `${Math.max(0, (me.pokemon.currentHp / me.pokemon.maxHp) * 100).toFixed(1)}%`,
-                  background: hpColor(me.pokemon.currentHp / me.pokemon.maxHp),
-                  transition: "width 0.15s ease-out",
-                  borderRadius: 2,
+                  width: `${Math.max(0, mePct * 100).toFixed(1)}%`,
+                  background: hpColor(mePct),
+                  transition: "width 0.15s ease-out, background 0.3s",
                 }}
               />
             </div>
-            <span className="text-[10px] font-mono" style={{ color: "#aaaaaa" }}>
-              {me.pokemon.currentHp}/{me.pokemon.maxHp}
-            </span>
           </div>
         </div>
       )}
@@ -138,7 +326,7 @@ export function ArenaHUD() {
           <div
             key={i}
             className="text-[10px] font-mono px-2 py-0.5"
-            style={{ background: "rgba(8,8,12,0.82)", color: "#ff5544", borderLeft: "2px solid #ff5544" }}
+            style={{ background: "rgba(240,232,200,0.92)", color: "#cc2200", borderLeft: "2px solid #cc2200", border: "1px solid #999" }}
           >
             ✕ {e.username.toUpperCase()} — #{e.placement}
           </div>
