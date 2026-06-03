@@ -5,6 +5,7 @@ const socket_io_1 = require("socket.io");
 const service_1 = require("../auth/service");
 const matchmaking_1 = require("./matchmaking");
 const arenaHandler_1 = require("./arenaHandler");
+const arenaManager_1 = require("../arena/arenaManager");
 const config_1 = require("../config");
 function attachSocketServer(httpServer) {
     const corsOrigins = config_1.config.CORS_ORIGIN.split(",").map((s) => s.trim());
@@ -57,6 +58,15 @@ function attachSocketServer(httpServer) {
         });
         socket.on("disconnect", async () => {
             await (0, matchmaking_1.leaveQueue)(socket.id);
+            // If they were in an active battle, KO their Pokemon. Tear the room down once no
+            // human players remain connected (e.g. they left a bot match).
+            const room = (0, arenaManager_1.getRoomBySocketId)(socket.id);
+            if (room) {
+                room.surrender(socket.id);
+                const humansLeft = room.getState().players.some((p) => !p.isAI && p.socketId !== socket.id && io.sockets.sockets.has(p.socketId));
+                if (!humansLeft)
+                    (0, arenaManager_1.destroyRoom)(room.roomId);
+            }
         });
         (0, arenaHandler_1.registerArenaHandlers)(socket);
     });

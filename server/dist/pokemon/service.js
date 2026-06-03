@@ -4,6 +4,7 @@ exports.listPokemon = listPokemon;
 exports.getPokemonById = getPokemonById;
 exports.getRandomMoves = getRandomMoves;
 const db_1 = require("../db");
+const pokemonCache_1 = require("../cache/pokemonCache");
 function toSummary(p) {
     return {
         id: p.id,
@@ -57,27 +58,16 @@ async function getPokemonById(id) {
     return toSummary(p);
 }
 async function getRandomMoves(pokemonId, count) {
-    const all = await db_1.db.pokemonMove.findMany({
-        where: { pokemonId, move: { damageClass: { not: "status" }, power: { not: null } } },
-        include: { move: true },
-    });
-    const status = await db_1.db.pokemonMove.findMany({
-        where: { pokemonId, move: { damageClass: "status" } },
-        include: { move: true },
-        take: 5,
-    });
-    const damaging = all.sort(() => Math.random() - 0.5).slice(0, count - 1);
+    const allMoves = await (0, pokemonCache_1.getCachedMoves)(pokemonId);
+    const damaging = allMoves.filter((m) => m.damageClass !== "status" && m.power != null);
+    const status = allMoves.filter((m) => m.damageClass === "status");
+    const damagingPick = damaging.sort(() => Math.random() - 0.5).slice(0, count - 1);
     const statusPick = status.sort(() => Math.random() - 0.5).slice(0, 1);
-    const combined = [...damaging, ...statusPick]
+    const combined = [...damagingPick, ...statusPick]
         .sort(() => Math.random() - 0.5)
         .slice(0, count);
     if (combined.length < count) {
-        const fallback = await db_1.db.pokemonMove.findMany({
-            where: { pokemonId },
-            include: { move: true },
-            take: count,
-        });
-        return fallback.slice(0, count).map((pm) => pm.move);
+        return allMoves.sort(() => Math.random() - 0.5).slice(0, count);
     }
-    return combined.map((pm) => pm.move);
+    return combined;
 }

@@ -24,6 +24,7 @@ export interface MoveData {
     displayName: string;
     type: string;
     damageClass: DamageClass;
+    sfx: string | null;
     power: number | null;
     accuracy: number | null;
     pp: number;

@@ -1,12 +1,13 @@
 import * as PIXI from "pixi.js";
 import { TYPE_COLORS } from "../styles/typeColors";
+import { MOVE_OVERRIDES, playMove, type MoveAnimContext } from "./moveArchetypes";
 
 function typeColor(moveType: string): number {
   return parseInt((TYPE_COLORS[moveType] ?? "#66ddff").replace("#", ""), 16);
 }
 
 // Downloaded Pokemon Showdown effect sprites (served from client/public/fx), mapped per
-// move TYPE. A move picks one of its type's sprites at random for variety.
+// move TYPE. A move with no curated override picks one of its type's sprites for variety.
 const FX_BASE = "/fx";
 const FALLBACK_FX = "wisp";
 const TYPE_FX: Record<string, string[]> = {
@@ -30,47 +31,209 @@ const TYPE_FX: Record<string, string[]> = {
   fairy:    ["mistball", "petal"],
 };
 
+// Extra sprites referenced by archetypes/overrides that aren't in TYPE_FX. Preloaded
+// alongside the type sprites; any missing file degrades to a tinted orb (see showEffect).
+const EXTRA_FX = ["leftslash", "rightslash", "impact", "fist"];
+
+// ─── Low-level effect primitive types (modeled on Showdown's scene.showEffect) ──
+export type Easing = "linear" | "accel" | "decel" | "swing" | "ballistic";
+
+export interface EffectState {
+  x: number;
+  y: number;
+  scale?: number;    // multiplied onto the texture's base-size scale (default 1)
+  opacity?: number;  // 0..1 (default 1)
+  rotation?: number; // radians (default 0); ignored if opts.spin is set
+  time?: number;     // on `start`: delay before the tween begins; on `end`: tween duration (ms)
+}
+
+export interface ShowEffectOpts {
+  baseSize?: number;   // px the texture's largest dimension maps to (default 48)
+  tint?: number;       // recolor the sprite itself
+  glowColor?: number;  // color of explode sparkles / fallback orb (default tint, else white)
+  blendAdd?: boolean;  // additive blend for glowy effects
+  easing?: Easing;     // position/scale/opacity easing (default "linear")
+  arcHeight?: number;  // extra vertical arc for "ballistic" (negative = up)
+  spin?: number;       // continuous rotation delta per frame instead of lerping rotation
+  after?: "fade" | "explode" | "remove"; // end behavior (default "fade")
+}
+
+const EASING: Record<Easing, (t: number) => number> = {
+  linear: (t) => t,
+  accel: (t) => t * t,
+  decel: (t) => 1 - (1 - t) * (1 - t),
+  swing: (t) => 0.5 - 0.5 * Math.cos(Math.PI * t),
+  ballistic: (t) => t, // position is linear; the arc is added separately
+};
+
 export class MoveEffect {
   private container: PIXI.Container;
   private textures = new Map<string, PIXI.Texture>();
+  private lazyLoads = new Map<string, Promise<void>>();
 
   constructor() {
     this.container = new PIXI.Container();
     void this.preloadTextures();
   }
 
-  /** Preload every FX sprite once so attacks can render instantly. */
+  /** Preload every sprite referenced by type defaults, curated overrides, and extras. */
   private async preloadTextures(): Promise<void> {
-    const names = Array.from(new Set([...Object.values(TYPE_FX).flat(), FALLBACK_FX]));
-    await Promise.all(
-      names.map(async (name) => {
-        try {
-          const tex = (await PIXI.Assets.load(`${FX_BASE}/${name}.png`)) as PIXI.Texture;
-          this.textures.set(name, tex);
-        } catch (err) {
-          console.warn("[MoveEffect] failed to load fx", name, err);
-        }
-      })
+    const names = Array.from(
+      new Set([
+        ...Object.values(TYPE_FX).flat(),
+        ...Object.values(MOVE_OVERRIDES).map((o) => o.tex).filter((t): t is string => !!t),
+        ...EXTRA_FX,
+        FALLBACK_FX,
+      ])
     );
+    await Promise.all(names.map((name) => this.lazyLoad(name)));
   }
 
   getContainer(): PIXI.Container {
     return this.container;
   }
 
-  /** Pick a loaded texture for the move's type (random among its variants), or fallback. */
-  private pickTexture(moveType: string): PIXI.Texture | null {
-    const names = [...(TYPE_FX[moveType] ?? [FALLBACK_FX])].sort(() => Math.random() - 0.5);
-    for (const n of names) {
-      const t = this.textures.get(n);
-      if (t) return t;
-    }
-    return this.textures.get(FALLBACK_FX) ?? null;
+  /** Kick off (once) an async load for an fx sprite, caching it on success. */
+  private lazyLoad(name: string): Promise<void> {
+    const existing = this.lazyLoads.get(name);
+    if (existing) return existing;
+    const p = PIXI.Assets.load(`${FX_BASE}/${name}.png`)
+      .then((tex) => { this.textures.set(name, tex as PIXI.Texture); })
+      .catch((err) => { console.warn("[MoveEffect] failed to load fx", name, err); });
+    this.lazyLoads.set(name, p);
+    return p;
+  }
+
+  /** Return a loaded texture, or null if not ready yet (kicks off a lazy load). */
+  private getTexture(name: string): PIXI.Texture | null {
+    const cached = this.textures.get(name);
+    if (cached) return cached;
+    void this.lazyLoad(name);
+    return null;
+  }
+
+  /** Pick a default fx sprite NAME for a move's type (random among its variants). */
+  pickFxName(moveType: string): string {
+    const names = TYPE_FX[moveType] ?? [FALLBACK_FX];
+    return names[Math.floor(Math.random() * names.length)] ?? FALLBACK_FX;
   }
 
   /** Scale a texture so its largest dimension is roughly `target` px. */
   private scaleFor(tex: PIXI.Texture, target: number): number {
     return target / (Math.max(tex.width, tex.height) || target);
+  }
+
+  // ─── The primitive every archetype composes ─────────────────────────────────
+  /**
+   * Spawn one fx sprite and tween position/scale/opacity/rotation from `start` to
+   * `end` over `end.time` ms (after an optional `start.time` ms delay), then resolve
+   * per `opts.after`. If the texture isn't loaded, renders a tinted orb so a move
+   * never renders nothing.
+   */
+  showEffect(texName: string, start: EffectState, end: EffectState, opts: ShowEffectOpts = {}): void {
+    const baseSize = opts.baseSize ?? 48;
+    const glow = opts.glowColor ?? opts.tint ?? 0xffffff;
+    const after = opts.after ?? "fade";
+    const delay = Math.max(0, start.time ?? 0);
+    const dur = Math.max(1, end.time ?? 300);
+    const ease = EASING[opts.easing ?? "linear"];
+
+    const tex = this.getTexture(texName);
+    let display: PIXI.Sprite | PIXI.Graphics;
+    let texScale: number;
+    if (tex) {
+      const sprite = new PIXI.Sprite(tex);
+      sprite.anchor.set(0.5);
+      if (opts.tint !== undefined) sprite.tint = opts.tint;
+      display = sprite;
+      texScale = this.scaleFor(tex, baseSize);
+    } else {
+      display = new PIXI.Graphics().circle(0, 0, baseSize / 2).fill({ color: glow });
+      texScale = 1;
+    }
+    if (opts.blendAdd) display.blendMode = "add";
+
+    const s0 = start.scale ?? 1;
+    const s1 = end.scale ?? s0;
+    const o0 = start.opacity ?? 1;
+    const o1 = end.opacity ?? o0;
+    const r0 = start.rotation ?? 0;
+    const r1 = end.rotation ?? r0;
+    const dist = Math.hypot(end.x - start.x, end.y - start.y);
+    const arc = opts.arcHeight ?? (opts.easing === "ballistic" ? -Math.min(40, dist * 0.12) : 0);
+
+    display.x = start.x;
+    display.y = start.y;
+    display.scale.set(texScale * s0);
+    display.alpha = o0;
+    display.rotation = r0;
+    display.visible = delay === 0;
+    this.container.addChild(display);
+
+    const startAt = Date.now() + delay;
+    const tick = () => {
+      const now = Date.now();
+      if (now < startAt) { requestAnimationFrame(tick); return; }
+      display.visible = true;
+      const lin = Math.min((now - startAt) / dur, 1);
+      const k = ease(lin);
+      display.x = start.x + (end.x - start.x) * k;
+      display.y = start.y + (end.y - start.y) * k + Math.sin(lin * Math.PI) * arc;
+      display.scale.set(texScale * (s0 + (s1 - s0) * k));
+      display.alpha = o0 + (o1 - o0) * k;
+      if (opts.spin) display.rotation += opts.spin;
+      else display.rotation = r0 + (r1 - r0) * k;
+      if (lin < 1) requestAnimationFrame(tick);
+      else this.finishEffect(display, end.x, end.y, glow, after);
+    };
+    requestAnimationFrame(tick);
+  }
+
+  private finishEffect(
+    display: PIXI.Sprite | PIXI.Graphics,
+    x: number, y: number,
+    color: number,
+    after: "fade" | "explode" | "remove",
+  ): void {
+    if (after === "remove") { this.container.removeChild(display); display.destroy(); return; }
+    if (after === "explode") this.spawnSparkleCloud(x, y, color, 46, 12);
+    const dur = after === "explode" ? 170 : 120;
+    const startAlpha = display.alpha;
+    const baseScale = display.scale.x;
+    const start = Date.now();
+    const tick = () => {
+      const t = Math.min((Date.now() - start) / dur, 1);
+      display.alpha = startAlpha * (1 - t);
+      if (after === "explode") display.scale.set(baseScale * (1 + t * 0.9));
+      if (t < 1) requestAnimationFrame(tick);
+      else { this.container.removeChild(display); display.destroy(); }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // ─── Dispatcher: route a move to its archetype animation ─────────────────────
+  fire(
+    fromX: number, fromY: number,
+    toX: number, toY: number,
+    moveName: string,
+    moveType: string,
+    damageClass: string,
+    isAoe: boolean,
+    effectiveness: number,
+    isCrit: boolean,
+  ): void {
+    const ctx: MoveAnimContext = {
+      fromX, fromY, toX, toY,
+      moveName,
+      moveType,
+      damageClass,
+      isAoe,
+      color: typeColor(moveType),
+      defaultTex: this.pickFxName(moveType),
+      isCrit,
+      effectiveness,
+    };
+    playMove(this, ctx);
   }
 
   showMoveName(x: number, y: number, moveName: string, moveType: string): void {
@@ -137,118 +300,8 @@ export class MoveEffect {
     requestAnimationFrame(tick);
   }
 
-  fire(
-    fromX: number, fromY: number,
-    toX: number, toY: number,
-    moveType: string,
-    damageClass: string,
-    isAoe: boolean,
-    _effectiveness: number,
-    isCrit: boolean,
-  ): void {
-    const color = typeColor(moveType);
-    const tex = this.pickTexture(moveType);
-
-    // Fallback to procedural sparkles if assets haven't finished loading.
-    if (!tex) {
-      if (isAoe || damageClass === "status") this.ringPulse(fromX, fromY, color, isCrit ? 140 : 100);
-      else this.spawnSparkleCloud(toX, toY, color, isCrit ? 70 : 50, isCrit ? 20 : 14);
-      return;
-    }
-
-    if (isAoe) {
-      this.ringPulse(fromX, fromY, color, isCrit ? 150 : 110);
-      this.burstFx(tex, fromX, fromY, color, isCrit ? 2.4 : 1.9, isCrit);
-      return;
-    }
-    if (damageClass === "status") {
-      this.burstFx(tex, fromX, fromY, color, isCrit ? 1.5 : 1.2, isCrit);
-      return;
-    }
-    this.flyProjectile(tex, fromX, fromY, toX, toY, color, isCrit);
-  }
-
-  // ─── Textured projectile: fly the FX sprite from attacker to target ──────────
-  private flyProjectile(
-    tex: PIXI.Texture,
-    fromX: number, fromY: number,
-    toX: number, toY: number,
-    color: number, isCrit: boolean,
-  ): void {
-    const sprite = new PIXI.Sprite(tex);
-    sprite.anchor.set(0.5);
-    const baseScale = this.scaleFor(tex, isCrit ? 58 : 46);
-    sprite.scale.set(baseScale);
-    sprite.x = fromX;
-    sprite.y = fromY;
-    this.container.addChild(sprite);
-
-    const dur = 300;
-    const start = Date.now();
-    const arc = -Math.min(40, Math.hypot(toX - fromX, toY - fromY) * 0.12);
-    const animate = () => {
-      const t = Math.min((Date.now() - start) / dur, 1);
-      sprite.x = fromX + (toX - fromX) * t;
-      sprite.y = fromY + (toY - fromY) * t + Math.sin(t * Math.PI) * arc;
-      sprite.rotation += 0.35;
-      sprite.scale.set(baseScale * (1 + t * 0.15));
-      if (t < 1) requestAnimationFrame(animate);
-      else {
-        this.container.removeChild(sprite); sprite.destroy();
-        this.impactFx(tex, toX, toY, color, isCrit);
-      }
-    };
-    requestAnimationFrame(animate);
-  }
-
-  // ─── Impact: a quick expanding pop of the sprite + a sparkle burst ───────────
-  private impactFx(tex: PIXI.Texture, x: number, y: number, color: number, isCrit: boolean): void {
-    const s = new PIXI.Sprite(tex);
-    s.anchor.set(0.5);
-    s.x = x;
-    s.y = y;
-    const base = this.scaleFor(tex, isCrit ? 64 : 50);
-    this.container.addChild(s);
-
-    const dur = 240;
-    const start = Date.now();
-    const animate = () => {
-      const t = Math.min((Date.now() - start) / dur, 1);
-      s.scale.set(base * (1 + t * 1.3));
-      s.alpha = 1 - t;
-      s.rotation += 0.1;
-      if (t < 1) requestAnimationFrame(animate);
-      else { this.container.removeChild(s); s.destroy(); }
-    };
-    requestAnimationFrame(animate);
-    this.spawnSparkleCloud(x, y, color, isCrit ? 60 : 42, isCrit ? 16 : 11);
-  }
-
-  // ─── Burst in place (status / AoE) ───────────────────────────────────────────
-  private burstFx(tex: PIXI.Texture, x: number, y: number, color: number, scaleMul: number, isCrit: boolean): void {
-    const s = new PIXI.Sprite(tex);
-    s.anchor.set(0.5);
-    s.x = x;
-    s.y = y;
-    const base = this.scaleFor(tex, 52) * scaleMul;
-    this.container.addChild(s);
-
-    const dur = 360;
-    const start = Date.now();
-    const animate = () => {
-      const t = Math.min((Date.now() - start) / dur, 1);
-      s.scale.set(base * (0.6 + t * 0.7));
-      s.alpha = t < 0.4 ? 1 : 1 - (t - 0.4) / 0.6;
-      s.rotation += 0.06;
-      if (t < 1) requestAnimationFrame(animate);
-      else { this.container.removeChild(s); s.destroy(); }
-    };
-    requestAnimationFrame(animate);
-    this.spawnSparkleCloud(x, y, color, isCrit ? 50 : 36, isCrit ? 12 : 9);
-  }
-
-  // ─── Ring pulse: concentric expanding rings (AoE / status / fallback) ────────
-  private ringPulse(cx: number, cy: number, color: number, maxRadius: number): void {
+  // ─── Ring pulse: concentric expanding rings (AoE / self-buff) ────────────────
+  ringPulse(cx: number, cy: number, color: number, maxRadius: number): void {
     const ringCount = 3;
     const baseDur = 520;
 
@@ -273,7 +326,7 @@ export class MoveEffect {
   }
 
   // ─── Generic sparkle cloud (impact burst + fallback) ─────────────────────────
-  private spawnSparkleCloud(cx: number, cy: number, color: number, radius: number, count: number): void {
+  spawnSparkleCloud(cx: number, cy: number, color: number, radius: number, count: number): void {
     const duration = 580;
 
     const glow = new PIXI.Graphics()

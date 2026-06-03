@@ -28,6 +28,8 @@ export interface MoveData {
   displayName: string;
   type: string;
   damageClass: DamageClass;
+  // Per-move sound effect slug; null falls back to the per-type sound (see audio.ts).
+  sfx: string | null;
   power: number | null;
   accuracy: number | null;
   pp: number;

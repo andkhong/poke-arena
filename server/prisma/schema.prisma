@@ -54,6 +54,7 @@ model Move {
   critRate      Int           @default(0)
   statChanges   Json          @default("[]")
   statChance    Int           @default(0)
+  sfx           String?
   pokemonMoves  PokemonMove[]
 }
 

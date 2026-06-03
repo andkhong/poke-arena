@@ -2,11 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createRoom = createRoom;
 exports.getRoom = getRoom;
+exports.getRoomBySocketId = getRoomBySocketId;
 exports.destroyRoom = destroyRoom;
 exports.getRoomCount = getRoomCount;
 const crypto_1 = require("crypto");
 const arenaRoom_1 = require("./arenaRoom");
 const arenaEngine_1 = require("./arenaEngine");
+const shared_1 = require("@poke-arena/shared");
 const rooms = new Map();
 function createRoom(players, timeLimit) {
     const roomId = (0, crypto_1.randomUUID)();
@@ -19,6 +21,7 @@ function createRoom(players, timeLimit) {
             displayName: m.displayName,
             type: m.type,
             damageClass: m.damageClass,
+            sfx: m.sfx,
             power: m.power,
             accuracy: m.accuracy,
             pp: m.pp,
@@ -47,8 +50,8 @@ function createRoom(players, timeLimit) {
                 specialDef: p.pokemonData.specialDef,
                 speed: p.pokemonData.speed,
             },
-            currentHp: p.pokemonData.hp,
-            maxHp: p.pokemonData.hp,
+            currentHp: Math.floor(2 * p.pokemonData.hp * shared_1.POKEMON_LEVEL / 100) + shared_1.POKEMON_LEVEL + 10,
+            maxHp: Math.floor(2 * p.pokemonData.hp * shared_1.POKEMON_LEVEL / 100) + shared_1.POKEMON_LEVEL + 10,
             status: null,
             statusTurnsLeft: 0,
             statStages: (0, arenaEngine_1.defaultStatStages)(),
@@ -74,6 +77,13 @@ function createRoom(players, timeLimit) {
 }
 function getRoom(roomId) {
     return rooms.get(roomId);
+}
+function getRoomBySocketId(socketId) {
+    for (const room of rooms.values()) {
+        if (room.getSocketIds().includes(socketId))
+            return room;
+    }
+    return undefined;
 }
 function destroyRoom(roomId) {
     const room = rooms.get(roomId);

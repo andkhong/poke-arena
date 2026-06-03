@@ -44,9 +44,11 @@ export interface BattleLogEntry {
 export interface PendingAction {
   attackerPokemonId: number;
   targetPokemonId: number;
+  moveName: string;
   moveDisplayName: string;
   moveType: string;
   damageClass: string;
+  sfx: string | null;
   isAoe: boolean;
   effectiveness: number;
   isCrit: boolean;
@@ -137,9 +139,11 @@ export const useArenaStore = create<ArenaState>((set) => ({
       const pendingAction: PendingAction = {
         attackerPokemonId: payload.attackerPokemonId,
         targetPokemonId: payload.targetPokemonId,
+        moveName: payload.moveName,
         moveDisplayName: payload.moveDisplayName,
         moveType: payload.moveType,
         damageClass: payload.damageClass,
+        sfx: payload.sfx,
         isAoe: payload.isAoe,
         effectiveness: payload.effectiveness,
         isCrit: payload.isCrit,

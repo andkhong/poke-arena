@@ -9,44 +9,63 @@ const db_1 = require("../db");
 const config_1 = require("../config");
 const arenaManager_1 = require("../arena/arenaManager");
 const service_1 = require("../pokemon/service");
+const pokemonCache_1 = require("../cache/pokemonCache");
 const service_2 = require("../leaderboard/service");
 const QUEUE_KEY = "pa:queue";
 const queueTimers = new Map();
 async function buildHumanPlayer(entry) {
-    const pokemon = await db_1.db.pokemon.findUnique({ where: { id: entry.pokemonId } });
+    const pokemon = await (0, pokemonCache_1.getCachedPokemonById)(entry.pokemonId);
+    if (!pokemon)
+        throw new Error(`Pokemon ${entry.pokemonId} not found — cannot start match`);
     const moves = await (0, service_1.getRandomMoves)(entry.pokemonId, 4);
     return { ...entry, pokemonData: pokemon, moves, isAI: false };
 }
-async function buildAIPlayer(index) {
-    const count = await db_1.db.pokemon.count();
-    const skip = Math.floor(Math.random() * count);
-    const [pokemon] = await db_1.db.pokemon.findMany({ skip, take: 1 });
-    const moves = await (0, service_1.getRandomMoves)(pokemon.id, 4);
-    return {
-        socketId: `ai-${index}-${Date.now()}`,
-        userId: `ai-${index}`,
-        username: `CPU ${pokemon.displayName}`,
-        pokemonId: pokemon.id,
-        joinedAt: Date.now(),
-        pokemonData: pokemon,
-        moves,
-        isAI: true,
-    };
+async function buildAIPlayers(count, excludeIds) {
+    if (count <= 0)
+        return [];
+    const pokemons = await (0, pokemonCache_1.getRandomCachedPokemonMany)(count, excludeIds);
+    if (pokemons.length === 0) {
+        throw new Error("No Pokemon found in cache — cache may not be warmed yet");
+    }
+    return Promise.all(pokemons.map(async (pokemon, index) => {
+        const moves = await (0, service_1.getRandomMoves)(pokemon.id, 4);
+        return {
+            socketId: `ai-${index}-${Date.now()}`,
+            userId: `ai-${index}`,
+            username: `CPU ${pokemon.displayName}`,
+            pokemonId: pokemon.id,
+            joinedAt: Date.now(),
+            pokemonData: pokemon,
+            moves,
+            isAI: true,
+        };
+    }));
 }
 function resolveSocket(io, socketId, directSockets) {
     return directSockets.get(socketId) ?? io.sockets.sockets.get(socketId);
 }
 async function spawnRoom(io, entries, withAI, isBotMatch, directSockets = new Map()) {
     console.log("[spawnRoom] start", { entries: entries.length, withAI, isBotMatch });
-    const aiSlots = withAI ? Math.max(0, config_1.config.MIN_ARENA_PLAYERS - entries.length) : 0;
-    console.log("[spawnRoom] aiSlots", aiSlots);
     const humanPlayers = await Promise.all(entries.map(buildHumanPlayer));
-    const aiPlayers = await Promise.all(Array.from({ length: aiSlots }, (_, i) => buildAIPlayer(i)));
+    // Fill the arena with AI so battles always have a full lobby of distinct Pokemon.
+    const targetSize = withAI ? config_1.config.MAX_ARENA_PLAYERS : humanPlayers.length;
+    const aiSlots = Math.max(0, targetSize - humanPlayers.length);
+    const excludeIds = humanPlayers.map((p) => p.pokemonId);
+    console.log("[spawnRoom] aiSlots", aiSlots, "targetSize", targetSize);
+    const aiPlayers = await buildAIPlayers(aiSlots, excludeIds);
     console.log("[spawnRoom] humanPlayers built", humanPlayers.length, "aiPlayers built", aiPlayers.length);
     const allPlayers = [...humanPlayers, ...aiPlayers].filter((p) => p.pokemonData);
     console.log("[spawnRoom] allPlayers after filter", allPlayers.length);
     if (allPlayers.length < 2) {
         console.log("[spawnRoom] EARLY RETURN — not enough players");
+        // Don't fail silently — tell the human player(s) so the client leaves the spinner.
+        for (const p of humanPlayers) {
+            const socket = resolveSocket(io, p.socketId, directSockets);
+            socket?.emit("error:socket", {
+                code: "MATCH_FAILED",
+                message: "Could not start the match — not enough valid players.",
+            });
+        }
         return;
     }
     const room = (0, arenaManager_1.createRoom)(allPlayers, config_1.config.ARENA_TIME_LIMIT_MS);
@@ -102,10 +121,11 @@ async function spawnRoom(io, entries, withAI, isBotMatch, directSockets = new Ma
                 isAI: ap.isAI,
             })),
             timeLimit: config_1.config.ARENA_TIME_LIMIT_MS,
-            startsAt: Date.now() + 3000,
+            // 5s pre-battle window so the pokeball summon intro can play before fighting starts.
+            startsAt: Date.now() + 5000,
         });
     }
-    room.start(3000);
+    room.start(5000);
 }
 function setupMatchmaking(io) {
     async function tryFormRoom() {

@@ -1,9 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.ARENA_MARGIN_BOTTOM = exports.ARENA_MARGIN_TOP = exports.ARENA_MARGIN_X = void 0;
 exports.computeInitialCooldown = computeInitialCooldown;
 exports.computeMovementSpeed = computeMovementSpeed;
 exports.distanceBetween = distanceBetween;
+exports.moveTowardPoint = moveTowardPoint;
 exports.moveToward = moveToward;
+exports.pickWanderTarget = pickWanderTarget;
 exports.getAttackRange = getAttackRange;
 exports.canReach = canReach;
 exports.findTargets = findTargets;
@@ -14,26 +17,47 @@ exports.applyStatusDamage = applyStatusDamage;
 exports.canAttack = canAttack;
 exports.defaultStatStages = defaultStatStages;
 const shared_1 = require("@poke-arena/shared");
+// ─── Playable bounds ──────────────────────────────────────────────────────────
+// Pokemon are kept inside these margins so their sprites stay fully on-screen. The top
+// margin is the largest because sprites are bottom-anchored and drawn UPWARD (a Pokemon at
+// y≈0 would render above the canvas), and the HP bars also sit along the top edge.
+exports.ARENA_MARGIN_X = 90;
+exports.ARENA_MARGIN_TOP = 190;
+exports.ARENA_MARGIN_BOTTOM = 80;
 // ─── Cooldown ────────────────────────────────────────────────────────────────
 function computeInitialCooldown(speed) {
     return Math.round(shared_1.BASE_COOLDOWN_TICKS * (100 / Math.max(speed, 1)));
 }
 // ─── Movement ────────────────────────────────────────────────────────────────
 function computeMovementSpeed(speed) {
-    return shared_1.MOVEMENT_SPEED_BASE * (speed / 100);
+    return Math.max(shared_1.MOVEMENT_SPEED_MIN, shared_1.MOVEMENT_SPEED_BASE * (speed / 100));
 }
 function distanceBetween(a, b) {
     return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
-function moveToward(pokemon, target, speed, arenaW, arenaH) {
-    const dist = distanceBetween(pokemon, target);
+function moveTowardPoint(pokemon, tx, ty, speed, arenaW, arenaH) {
+    const dx = tx - pokemon.x;
+    const dy = ty - pokemon.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist === 0)
         return;
     const step = computeMovementSpeed(speed);
     const ratio = Math.min(step / dist, 1);
-    pokemon.x = clamp(pokemon.x + (target.x - pokemon.x) * ratio, 0, arenaW);
-    pokemon.y = clamp(pokemon.y + (target.y - pokemon.y) * ratio, 0, arenaH);
-    pokemon.facingRight = target.x >= pokemon.x;
+    pokemon.x = clamp(pokemon.x + dx * ratio, exports.ARENA_MARGIN_X, arenaW - exports.ARENA_MARGIN_X);
+    pokemon.y = clamp(pokemon.y + dy * ratio, exports.ARENA_MARGIN_TOP, arenaH - exports.ARENA_MARGIN_BOTTOM);
+    pokemon.facingRight = tx >= pokemon.x;
+}
+function moveToward(pokemon, target, speed, arenaW, arenaH) {
+    moveTowardPoint(pokemon, target.x, target.y, speed, arenaW, arenaH);
+}
+/** Random roaming point: a 150–400px hop from the current position, kept inside the arena. */
+function pickWanderTarget(pokemon, arenaW, arenaH) {
+    const angle = Math.random() * 2 * Math.PI;
+    const dist = 150 + Math.random() * 250;
+    return {
+        x: clamp(pokemon.x + Math.cos(angle) * dist, exports.ARENA_MARGIN_X, arenaW - exports.ARENA_MARGIN_X),
+        y: clamp(pokemon.y + Math.sin(angle) * dist, exports.ARENA_MARGIN_TOP, arenaH - exports.ARENA_MARGIN_BOTTOM),
+    };
 }
 function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
@@ -53,19 +77,18 @@ function canReach(attacker, target, move) {
 }
 // ─── Target selection ────────────────────────────────────────────────────────
 function findTargets(attacker, move, allPokemon) {
-    const enemies = allPokemon.filter((p) => p.isAlive && p.pokemonId !== attacker.pokemonId);
     if (move.rangeType === "self")
         return [attacker];
-    if (move.rangeType === "aoe") {
-        return enemies.filter((e) => distanceBetween(attacker, e) <= shared_1.AOE_RANGE);
-    }
+    const enemies = allPokemon.filter((p) => p.isAlive && p.pokemonId !== attacker.pokemonId);
     const range = getAttackRange(move);
     const inRange = enemies.filter((e) => distanceBetween(attacker, e) <= range);
+    // AoE hits everything in the vicinity; single-target picks a RANDOM enemy in range
+    // (not the nearest), so attacks fan out across whoever is close.
+    if (move.rangeType === "aoe")
+        return inRange;
     if (inRange.length === 0)
         return [];
-    // Pick nearest target within range
-    inRange.sort((a, b) => distanceBetween(attacker, a) - distanceBetween(attacker, b));
-    return [inRange[0]];
+    return [inRange[Math.floor(Math.random() * inRange.length)]];
 }
 // ─── Damage calculation ───────────────────────────────────────────────────────
 function stageMult(stage) {
@@ -107,19 +130,13 @@ function calculateDamage(attacker, defender, move) {
     return { damage, isCrit, effectiveness, randomFactor };
 }
 // ─── Move selection ───────────────────────────────────────────────────────────
-function chooseMove(attacker, targets, allPokemon) {
-    // Filter moves that have valid targets
-    const usableMoves = attacker.moves.filter((move) => {
-        if (move.rangeType === "self")
-            return true;
-        const ts = findTargets(attacker, move, allPokemon);
-        return ts.length > 0;
-    });
-    if (usableMoves.length === 0)
+function chooseMove(attacker, allPokemon) {
+    if (attacker.moves.length === 0)
         return null;
-    const move = usableMoves[Math.floor(Math.random() * usableMoves.length)];
-    const moveTargets = findTargets(attacker, move, allPokemon);
-    return { move, targets: moveTargets };
+    // Pick ANY random move — not filtered by target availability. If nothing is in range
+    // the move whiffs (the caller turns an empty target list into an attack-into-the-air).
+    const move = attacker.moves[Math.floor(Math.random() * attacker.moves.length)];
+    return { move, targets: findTargets(attacker, move, allPokemon) };
 }
 // ─── Apply attack ─────────────────────────────────────────────────────────────
 function applyAttack(attacker, target, move) {
@@ -133,6 +150,7 @@ function applyAttack(attacker, target, move) {
             moveName: move.name,
             moveType: move.type,
             damageClass: move.damageClass,
+            sfx: move.sfx,
             damageDealt: 0,
             effectiveness: 1,
             isCrit: false,
@@ -188,6 +206,7 @@ function applyAttack(attacker, target, move) {
         moveName: move.name,
         moveType: move.type,
         damageClass: move.damageClass,
+        sfx: move.sfx,
         damageDealt: actualDamage,
         effectiveness,
         isCrit,

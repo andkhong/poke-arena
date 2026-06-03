@@ -55,6 +55,7 @@ export interface ArenaActionPayload {
   moveDisplayName: string;
   moveType: string;
   damageClass: string;
+  sfx: string | null;
   damageDealt: number;
   effectiveness: number;
   isCrit: boolean;

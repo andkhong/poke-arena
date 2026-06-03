@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedMoves = seedMoves;
 const db_1 = require("../db");
 const rateLimiter_1 = require("./rateLimiter");
+const moveSfx_1 = require("./moveSfx");
 const VALID_CLASSES = new Set(["physical", "special", "status"]);
 // PokeAPI target values that map to our range types
 function inferRangeType(target, damageClass) {
@@ -60,6 +61,7 @@ async function seedMoves() {
                     critRate: data.meta?.crit_rate ?? 0,
                     statChanges: statChanges,
                     statChance: data.meta?.stat_chance ?? 0,
+                    sfx: moveSfx_1.MOVES_WITH_SFX.has(data.name) ? data.name : null,
                 },
                 update: {
                     displayName,
@@ -67,6 +69,7 @@ async function seedMoves() {
                     power: data.power,
                     accuracy: data.accuracy,
                     rangeType: inferRangeType(data.target?.name ?? "selected-pokemon", dc),
+                    sfx: moveSfx_1.MOVES_WITH_SFX.has(data.name) ? data.name : null,
                 },
             });
             done++;

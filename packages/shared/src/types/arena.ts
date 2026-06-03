@@ -36,6 +36,7 @@ export interface ResolvedAction {
   moveName: string;
   moveType: string;
   damageClass: string;
+  sfx: string | null;
   damageDealt: number;
   effectiveness: number;
   isCrit: boolean;

@@ -139,8 +139,8 @@ export class ArenaRenderer {
 
       if (!action.missed) {
         if (target) target.playHit();
-        playMoveSound(action.moveType, action.damageClass);
-        this.moveEffect.fire(ax, ay, tx, ty, action.moveType, action.damageClass, action.isAoe, action.effectiveness, action.isCrit);
+        playMoveSound(action.sfx, action.moveType, action.damageClass);
+        this.moveEffect.fire(ax, ay, tx, ty, action.moveName, action.moveType, action.damageClass, action.isAoe, action.effectiveness, action.isCrit);
         if (target) this.moveEffect.showDamage(tx, ty, action.damageDealt, action.effectiveness, action.isCrit);
       }
     }

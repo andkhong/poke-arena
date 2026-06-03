@@ -1,5 +1,6 @@
 import { db } from "../db";
 import { limiter, fetchWithRetry } from "./rateLimiter";
+import { MOVES_WITH_SFX } from "./moveSfx";
 
 const VALID_CLASSES = new Set(["physical", "special", "status"]);
 
@@ -87,6 +88,7 @@ export async function seedMoves(): Promise<void> {
             critRate: data.meta?.crit_rate ?? 0,
             statChanges: statChanges as object[],
             statChance: data.meta?.stat_chance ?? 0,
+            sfx: MOVES_WITH_SFX.has(data.name) ? data.name : null,
           },
           update: {
             displayName,
@@ -94,6 +96,7 @@ export async function seedMoves(): Promise<void> {
             power: data.power,
             accuracy: data.accuracy,
             rangeType: inferRangeType(data.target?.name ?? "selected-pokemon", dc),
+            sfx: MOVES_WITH_SFX.has(data.name) ? data.name : null,
           },
         });
 

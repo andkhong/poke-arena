@@ -43,6 +43,7 @@ export function createRoom(
       displayName: m.displayName,
       type: m.type,
       damageClass: m.damageClass as MoveData["damageClass"],
+      sfx: m.sfx,
       power: m.power,
       accuracy: m.accuracy,
       pp: m.pp,
