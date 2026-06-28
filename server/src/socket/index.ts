@@ -38,10 +38,10 @@ export function attachSocketServer(httpServer: HttpServer): Server {
     const userId = (socket as unknown as Record<string, string>).userId;
     const username = (socket as unknown as Record<string, string>).username;
 
-    socket.on("queue:join", async ({ pokemonId, botMatch }) => {
+    socket.on("queue:join", async ({ pokemonId, botMatch, opponents }) => {
       try {
         if (botMatch) {
-          await joinBotMatch(socket, io, userId, username, pokemonId);
+          await joinBotMatch(socket, io, userId, username, pokemonId, opponents);
         } else {
           await joinQueue(socket, io, userId, username, pokemonId);
         }

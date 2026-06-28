@@ -220,13 +220,18 @@ function formatTime(ms: number): string {
 }
 
 export function ArenaHUD() {
-  const { players, timeRemaining, eliminations } = useArenaStore();
+  const { players, timeRemaining, eliminations, spawnOrder } = useArenaStore();
   const { user } = useAuthStore();
 
-  const sorted = [...players].sort((a, b) => a.pokemon.x - b.pokemon.x);
-  const half = Math.ceil(sorted.length / 2);
-  const leftPlayers = sorted.slice(0, half);
-  const rightPlayers = sorted.slice(half);
+  // Render plates in the fixed spawn order (captured once at match start), keyed by
+  // the stable userId. Sorting by live x every tick (50ms) used to make plates jump
+  // columns and reorder as Pokemon moved around.
+  const ordered = spawnOrder
+    .map((id) => players.find((p) => p.userId === id))
+    .filter((p): p is ArenaPlayerInfo => p != null);
+  const half = Math.ceil(ordered.length / 2);
+  const leftPlayers = ordered.slice(0, half);
+  const rightPlayers = ordered.slice(half);
 
   const alive = players.filter((p) => p.pokemon.isAlive).length;
   const me = players.find((p) => p.userId === user?.id);
@@ -245,14 +250,14 @@ export function ArenaHUD() {
       {/* Left sidebar */}
       <div className="absolute top-0 left-0 flex flex-col gap-1.5 pt-2 pl-1">
         {leftPlayers.map((p) => (
-          <BarEntry key={p.pokemon.pokemonId} p={p} side="left" />
+          <BarEntry key={p.userId} p={p} side="left" />
         ))}
       </div>
 
       {/* Right sidebar */}
       <div className="absolute top-0 right-0 flex flex-col gap-1.5 pt-2 pr-1" style={{ alignItems: "flex-end" }}>
         {rightPlayers.map((p) => (
-          <BarEntry key={p.pokemon.pokemonId} p={p} side="right" />
+          <BarEntry key={p.userId} p={p} side="right" />
         ))}
       </div>
 

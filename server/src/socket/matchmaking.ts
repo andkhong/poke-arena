@@ -1,5 +1,6 @@
 import type { Server, Socket } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents } from "@poke-arena/shared";
+import { MIN_BOT_OPPONENTS, MAX_BOT_OPPONENTS, DEFAULT_BOT_OPPONENTS } from "@poke-arena/shared";
 import { redis } from "../redis";
 import { db } from "../db";
 import { config } from "../config";
@@ -65,13 +66,18 @@ async function spawnRoom(
   entries: QueueEntry[],
   withAI: boolean,
   isBotMatch: boolean,
-  directSockets: Map<string, IoSocket> = new Map()
+  directSockets: Map<string, IoSocket> = new Map(),
+  // For bot matches: number of AI opponents the human chose to face. When set,
+  // it overrides the default "fill to a full lobby" behavior.
+  botOpponents?: number
 ): Promise<void> {
-  console.log("[spawnRoom] start", { entries: entries.length, withAI, isBotMatch });
+  console.log("[spawnRoom] start", { entries: entries.length, withAI, isBotMatch, botOpponents });
 
   const humanPlayers = await Promise.all(entries.map(buildHumanPlayer));
   // Fill the arena with AI so battles always have a full lobby of distinct Pokemon.
-  const targetSize = withAI ? config.MAX_ARENA_PLAYERS : humanPlayers.length;
+  const targetSize = botOpponents != null
+    ? humanPlayers.length + botOpponents
+    : withAI ? config.MAX_ARENA_PLAYERS : humanPlayers.length;
   const aiSlots = Math.max(0, targetSize - humanPlayers.length);
   const excludeIds = humanPlayers.map((p) => p.pokemonId);
   console.log("[spawnRoom] aiSlots", aiSlots, "targetSize", targetSize);
@@ -231,13 +237,17 @@ export async function joinBotMatch(
   io: Server<ClientToServerEvents, ServerToClientEvents>,
   userId: string,
   username: string,
-  pokemonId: number
+  pokemonId: number,
+  opponents?: number
 ): Promise<void> {
-  console.log("[bot] joinBotMatch called", { socketId: socket.id, userId, pokemonId });
+  // Clamp the requested opponent count to the supported range; default to a full lobby.
+  const requested = Number.isFinite(opponents) ? Math.round(opponents as number) : DEFAULT_BOT_OPPONENTS;
+  const opponentCount = Math.max(MIN_BOT_OPPONENTS, Math.min(MAX_BOT_OPPONENTS, requested));
+  console.log("[bot] joinBotMatch called", { socketId: socket.id, userId, pokemonId, opponentCount });
   const entry: QueueEntry = { socketId: socket.id, userId, username, pokemonId, joinedAt: Date.now() };
   // Pass the socket reference directly — avoids relying on io.sockets.sockets lookup
   const directSockets = new Map([[socket.id, socket]]);
-  await spawnRoom(io, [entry], true, true, directSockets);
+  await spawnRoom(io, [entry], true, true, directSockets, opponentCount);
 }
 
 export async function leaveQueue(socketId: string): Promise<void> {

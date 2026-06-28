@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.STAT_STAGE_MULTIPLIERS = exports.SPAWN_RADIUS = exports.AOE_RANGE = exports.RANGED_RANGE = exports.MELEE_RANGE = exports.MOVES_PER_POKEMON = exports.POKEMON_LEVEL = exports.ARENA_HEIGHT = exports.ARENA_WIDTH = exports.MOVEMENT_SPEED_MIN = exports.MOVEMENT_SPEED_BASE = exports.BASE_COOLDOWN_TICKS = exports.TICK_RATE_MS = void 0;
+exports.STAT_STAGE_MULTIPLIERS = exports.SPAWN_RADIUS = exports.AOE_RANGE = exports.RANGED_RANGE = exports.MELEE_RANGE = exports.DEFAULT_BOT_OPPONENTS = exports.MAX_BOT_OPPONENTS = exports.MIN_BOT_OPPONENTS = exports.MOVES_PER_POKEMON = exports.POKEMON_LEVEL = exports.ARENA_HEIGHT = exports.ARENA_WIDTH = exports.MOVEMENT_SPEED_MIN = exports.MOVEMENT_SPEED_BASE = exports.BASE_COOLDOWN_TICKS = exports.TICK_RATE_MS = void 0;
 exports.TICK_RATE_MS = 50;
 exports.BASE_COOLDOWN_TICKS = 60;
 exports.MOVEMENT_SPEED_BASE = 2.0;
@@ -9,6 +9,10 @@ exports.ARENA_WIDTH = 1200;
 exports.ARENA_HEIGHT = 800;
 exports.POKEMON_LEVEL = 50;
 exports.MOVES_PER_POKEMON = 4;
+// Bot-match opponent count: the human picks how many AI Pokemon to face.
+exports.MIN_BOT_OPPONENTS = 2;
+exports.MAX_BOT_OPPONENTS = 8;
+exports.DEFAULT_BOT_OPPONENTS = 7;
 exports.MELEE_RANGE = 80;
 exports.RANGED_RANGE = 220;
 exports.AOE_RANGE = 200;

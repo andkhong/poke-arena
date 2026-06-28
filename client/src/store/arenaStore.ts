@@ -62,6 +62,9 @@ interface ArenaState {
   arenaH: number;
   startsAt: number;
   players: ArenaPlayerInfo[];
+  // userIds ordered by spawn x (left→right), captured once at match start so the
+  // HUD's column layout stays fixed instead of reshuffling as Pokemon move.
+  spawnOrder: string[];
   tick: number;
   timeRemaining: number;
   eliminations: EliminationEvent[];
@@ -85,6 +88,7 @@ const initialState = {
   arenaH: 800,
   startsAt: 0,
   players: [] as ArenaPlayerInfo[],
+  spawnOrder: [] as string[],
   tick: 0,
   timeRemaining: 180000,
   eliminations: [] as EliminationEvent[],
@@ -104,6 +108,7 @@ export const useArenaStore = create<ArenaState>((set) => ({
       arenaH: payload.arenaH,
       startsAt: payload.startsAt,
       players: payload.players,
+      spawnOrder: [...payload.players].sort((a, b) => a.pokemon.x - b.pokemon.x).map((p) => p.userId),
       timeRemaining: payload.timeLimit,
       tick: 0,
       eliminations: [],

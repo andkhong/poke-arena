@@ -6,6 +6,11 @@ export const ARENA_WIDTH = 1200;
 export const ARENA_HEIGHT = 800;
 export const POKEMON_LEVEL = 50;
 export const MOVES_PER_POKEMON = 4;
+
+// Bot-match opponent count: the human picks how many AI Pokemon to face.
+export const MIN_BOT_OPPONENTS = 2;
+export const MAX_BOT_OPPONENTS = 8;
+export const DEFAULT_BOT_OPPONENTS = 7;
 export const MELEE_RANGE = 80;
 export const RANGED_RANGE = 220;
 export const AOE_RANGE = 200;

@@ -8,6 +8,7 @@ import { BattleLog } from "../components/arena/BattleLog";
 import { useMatchmakingStore } from "../store/matchmakingStore";
 import { useArenaStore } from "../store/arenaStore";
 import { getSocket, disconnectSocket } from "../socket";
+import { playBattleMusic, stopBattleMusic } from "../game/audio";
 import type { ServerToClientEvents } from "@poke-arena/shared";
 
 function BattleCountdown({ startsAt }: { startsAt: number }) {
@@ -53,7 +54,7 @@ function BattleCountdown({ startsAt }: { startsAt: number }) {
 
 export function ArenaPage() {
   const navigate = useNavigate();
-  const { status, setIdle, isBotMatch, setMatched, selectedPokemonId } = useMatchmakingStore();
+  const { status, setIdle, isBotMatch, setMatched, selectedPokemonId, botOpponents } = useMatchmakingStore();
   const { result, setMatchStart, startsAt, tick, battleLog } = useArenaStore();
   // Persists across React StrictMode double-invoke so queue:join is only emitted once per mount.
   const botEmittedRef = useRef(false);
@@ -85,8 +86,8 @@ export function ArenaPage() {
       if (botEmittedRef.current) return;
       botEmittedRef.current = true;
       socket.off("connect", fireEmit);
-      console.log("[bot] emitting queue:join pokemonId=", pokemonId, "socketId=", socket.id);
-      socket.emit("queue:join", { pokemonId, botMatch: true });
+      console.log("[bot] emitting queue:join pokemonId=", pokemonId, "opponents=", botOpponents, "socketId=", socket.id);
+      socket.emit("queue:join", { pokemonId, botMatch: true, opponents: botOpponents });
     }
 
     if (socket.connected) {
@@ -108,7 +109,16 @@ export function ArenaPage() {
       clearTimeout(giveUp);
       socket.off("connect", fireEmit);
     };
-  }, [status, isBotMatch, selectedPokemonId, setIdle, navigate]);
+  }, [status, isBotMatch, selectedPokemonId, botOpponents, setIdle, navigate]);
+
+  // Background music: a random Gen 1 track loops while a match is on screen
+  // (from the countdown through the fight) and stops when the result modal
+  // appears, the player leaves, or the page unmounts. Deps are status/result
+  // only, so per-tick re-renders don't restart the track.
+  useEffect(() => {
+    if (status === "matched" && !result) void playBattleMusic();
+    return () => stopBattleMusic();
+  }, [status, result]);
 
   function handleCancelQueue() {
     getSocket().emit("queue:leave");

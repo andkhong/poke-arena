@@ -12,6 +12,11 @@ export class PokemonSprite {
   private isDestroyed = false;
   private isFainting = false;
   private lastHp = Infinity;
+  // Tick-driven "resting" position (canvas px). playAttack/playHit animate the
+  // container as an offset from here, so a 50ms tick landing mid-animation
+  // updates the resting spot without fighting the in-flight animation.
+  private baseX = 0;
+  private baseY = 0;
   pokemonId: number;
 
   constructor(pokemonId: number, spriteUrl: string, _maxHp: number, _displayName: string, _isMe: boolean) {
@@ -80,8 +85,14 @@ export class PokemonSprite {
   }
 
   setPosition(x: number, y: number, logicalW: number, logicalH: number, canvasW: number, canvasH: number): void {
-    this.container.x = (x / logicalW) * canvasW;
-    this.container.y = (y / logicalH) * canvasH;
+    this.baseX = (x / logicalW) * canvasW;
+    this.baseY = (y / logicalH) * canvasH;
+    // Don't stomp an in-progress lunge/shake — they animate as an offset from
+    // baseX/baseY and settle back to the latest base when they finish.
+    if (!this.isLunging && !this.isShaking) {
+      this.container.x = this.baseX;
+      this.container.y = this.baseY;
+    }
   }
 
   /** Hide the sprite before its summon (scale 0 keeps it invisible regardless of HP/alpha resets). */
@@ -148,23 +159,21 @@ export class PokemonSprite {
   playAttack(targetX: number, targetY: number): void {
     if (this.isLunging) return;
     this.isLunging = true;
-    const origX = this.container.x;
-    const origY = this.container.y;
-    const dx = (targetX - origX) * 0.18;
-    const dy = (targetY - origY) * 0.18;
+    const dx = (targetX - this.baseX) * 0.18;
+    const dy = (targetY - this.baseY) * 0.18;
 
     const start = Date.now();
     const animate = () => {
+      if (this.isDestroyed) { this.isLunging = false; return; }
       const t = (Date.now() - start) / 180;
-      if (t < 0.5) {
-        this.container.x = origX + dx * (t * 2);
-        this.container.y = origY + dy * (t * 2);
-      } else if (t < 1) {
-        this.container.x = origX + dx * (2 - t * 2);
-        this.container.y = origY + dy * (2 - t * 2);
-      } else {
-        this.container.x = origX;
-        this.container.y = origY;
+      // Lunge out then back; the origin tracks baseX/baseY so concurrent ticks
+      // move the resting point without snapping the sprite around.
+      const f = t < 0.5 ? t * 2 : t < 1 ? 2 - t * 2 : 0;
+      this.container.x = this.baseX + dx * f;
+      this.container.y = this.baseY + dy * f;
+      if (t >= 1) {
+        this.container.x = this.baseX;
+        this.container.y = this.baseY;
         this.isLunging = false;
         return;
       }
@@ -176,12 +185,14 @@ export class PokemonSprite {
   playHit(): void {
     if (this.isShaking) return;
     this.isShaking = true;
-    const origX = this.container.x;
     const shakes = [7, -7, 5, -5, 3, -3, 0];
     let i = 0;
     const step = () => {
-      if (i >= shakes.length) { this.container.x = origX; this.isShaking = false; return; }
-      this.container.x = origX + shakes[i++];
+      if (this.isDestroyed) { this.isShaking = false; return; }
+      // Shake around the latest tick position (baseX), not a value captured at
+      // call time, so the sprite doesn't fight concurrent position updates.
+      if (i >= shakes.length) { this.container.x = this.baseX; this.isShaking = false; return; }
+      this.container.x = this.baseX + shakes[i++];
       setTimeout(step, 45);
     };
     step();

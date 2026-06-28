@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { MIN_BOT_OPPONENTS, MAX_BOT_OPPONENTS, DEFAULT_BOT_OPPONENTS } from "@poke-arena/shared";
 import { PokemonCard } from "../components/pokemon/PokemonCard";
 import { PokemonStatPanel } from "../components/pokemon/PokemonStatPanel";
 import { GenerationFilter } from "../components/pokemon/GenerationFilter";
@@ -20,6 +21,7 @@ export function PokemonSelectPage() {
   const { setQueuing, setBotQueuing } = useMatchmakingStore();
   const { token } = useAuthStore();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [botOpponents, setBotOpponents] = useState(DEFAULT_BOT_OPPONENTS);
   const [gen, setGen] = useState<number | null>(null);
   const [type, setType] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -56,9 +58,14 @@ export function PokemonSelectPage() {
   function handleBotMatch() {
     if (!selectedId) return;
     if (token) connectSocket(token);
-    setBotQueuing(selectedId);
+    setBotQueuing(selectedId, botOpponents);
     navigate("/arena");
   }
+
+  const OPPONENT_OPTIONS = Array.from(
+    { length: MAX_BOT_OPPONENTS - MIN_BOT_OPPONENTS + 1 },
+    (_, i) => MIN_BOT_OPPONENTS + i,
+  );
 
   const totalPages = data ? Math.ceil(data.total / 30) : 1;
 
@@ -171,11 +178,31 @@ export function PokemonSelectPage() {
             >
               ⚔ Enter Arena!
             </button>
+            <div>
+              <div className="text-gray-400 text-[11px] font-bold tracking-wide mb-1 text-center">
+                BOT OPPONENTS
+              </div>
+              <div className="flex gap-1 justify-center flex-wrap">
+                {OPPONENT_OPTIONS.map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setBotOpponents(n)}
+                    className={`w-7 h-7 rounded text-sm font-bold transition ${
+                      botOpponents === n
+                        ? "bg-yellow-400 text-black"
+                        : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
               onClick={handleBotMatch}
               className="w-full py-2 bg-gray-700 text-white font-bold text-sm rounded-lg hover:bg-gray-600 transition"
             >
-              vs Bot
+              vs {botOpponents} Bot{botOpponents > 1 ? "s" : ""}
             </button>
           </div>
         ) : (

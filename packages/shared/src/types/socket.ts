@@ -6,6 +6,8 @@ import type { ArenaTickUpdate, ResolvedAction } from "./arena";
 export interface QueueJoinPayload {
   pokemonId: number;
   botMatch?: boolean;
+  /** For bot matches: how many AI opponents to face (clamped server-side to 2–8). */
+  opponents?: number;
 }
 
 export interface ArenaSurrenderPayload {
